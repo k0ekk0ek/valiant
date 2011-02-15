@@ -530,40 +530,7 @@ check_dnsbl_create (int plus, int minus, const char *zone)
 }
 
 
-/**
- * COMMENT
- */
-check_t *
-cfg_to_check_dnsbl (cfg_t *section)
-{
-  check_t *check;
 
-//  char *attribute;
-  char *zone;
-  int positive;
-  int negative;
-//  bool fold;
-
-//  if (! (attribute = cfg_getstr (section, "attribute")))
-//    panic ("%s: attribute undefined\n", __func__);
-  if (! (zone = cfg_getstr (section, "zone")))
-    panic ("%s: zone undefined\n", __func__);
-
-  //attribute = strdup (attribute);
-  zone = strdup (zone);
-
-  positive = (int) (cfg_getfloat (section, "positive") * 100);
-  negative = (int) (cfg_getfloat (section, "negative") * 100);
-//  fold = cfg_getbool (section, "case-sensitive");
-
-  g_printf ("%s: zone: %s, positive: %d, negative: %d\n",
-  __func__,
-  zone,
-  positive,
-  negative);
-
-  return check_dnsbl_create (positive, negative, zone);
-}
 
 
 

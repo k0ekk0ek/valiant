@@ -32,6 +32,18 @@ panic (char *fmt, ...)
   exit (1);
 }
 
+void
+error (char *fmt, ...)
+{
+  va_list vl;
+
+  va_start (vl, fmt);
+  vfprintf (stderr, fmt, vl);
+  va_end (vl);
+
+  return;
+}
+
 /*
  * readline	- implementation by W. Richard Stevens, 
  * modified to not include line terminator (\n or \r\n)

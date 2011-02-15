@@ -11,6 +11,7 @@
 
 void bail (char *, ...);
 void panic (char *, ...);
+void error (char *, ...);
 int readline(int fd, void *vptr, size_t maxlen);
 
 #endif

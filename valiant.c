@@ -1,4 +1,5 @@
 /* system includes */
+//#include <ares.h> /* drop support for c-ares and use unbound instead */
 #include <confuse.h>
 #include <glib.h>
 #include <glib/gthread.h>
@@ -7,10 +8,13 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+//#include <unbound.h>
 
 /* valiant includes */
 #include "check.h"
 
+
+//ares_channel *resolver;
 
 /* command line options */
 
@@ -31,6 +35,35 @@ char *pid_file;
 //  // IMPLEMENT
 //}
 
+/*
+request=smtpd_access_policy
+protocol_state=RCPT
+protocol_name=SMTP
+helo_name=some.domain.tld
+queue_id=8045F2AB23
+sender=foo@bar.tld
+recipient=bar@foo.tld
+recipient_count=0
+client_address=77.40.91.222
+client_name=another.domain.tld
+reverse_client_name=another.domain.tld
+instance=123.456.7
+
+request=smtpd_access_policy
+protocol_state=RCPT
+protocol_name=SMTP
+helo_name=some.domain.tld
+queue_id=8045F2AB23
+sender=foo@bar.tld
+recipient=bar@foo.tld
+recipient_count=0
+client_address=1.2.3.4
+client_name=another.domain.tld
+reverse_client_name=another.domain.tld
+instance=123.456.7
+
+
+*/
 
 void
 worker (gpointer data, gpointer user_data)
@@ -77,6 +110,9 @@ worker (gpointer data, gpointer user_data)
     g_printf ("%s: got returned %d\n", __func__, bla);
   }
 
+g_printf ("%s: waiting\n", __func__);
+  score_wait (score);
+g_printf ("%s: wait is over\n", __func__);
 
   write (sock, "DUNNO\n", 6);
 
@@ -100,6 +136,7 @@ main (int argc, char *argv[])
   config_file = NULL;
   pid_file = NULL;
 
+//  extern ares_channel *resolver;
 
   int c;
 
@@ -133,6 +170,7 @@ main (int argc, char *argv[])
     CFG_STR ("type", 0, CFGF_NODEFAULT),
     CFG_STR ("attribute", 0, CFGF_NODEFAULT),
     CFG_STR ("format", 0, CFGF_NODEFAULT),
+    CFG_STR ("zone", 0, CFGF_NODEFAULT),
     CFG_FLOAT ("positive", CHECK_POSITIVE_SCORE, CFGF_NONE),
     CFG_FLOAT ("negative", CHECK_NEGATIVE_SCORE, CFGF_NONE),
     CFG_BOOL ("case-sensitive", cfg_false, CFGF_NONE),
@@ -150,6 +188,8 @@ main (int argc, char *argv[])
 
   checklist_t *chks = cfg_to_checklist (cfg);
 
+g_printf ("converted checks\n");
+
   // now daemonize if not debug
   // bind to socket
   // create nice new thread pool
@@ -157,6 +197,45 @@ main (int argc, char *argv[])
   GError *error = NULL;
 
   GThreadPool *pool = g_thread_pool_new (&worker, chks, 10, TRUE, &error);
+
+
+//	struct ares_options ares_opts = { 0 };
+
+//		ares_opts.lookups = "b";
+
+//	logstr(GLOG_DEBUG, "dnsblc called: timelimit %d", edict->timelimit);
+//
+//	/* fetch check_info */
+//	assert(info);
+//	assert(info->arg);
+//	check_info = (dns_check_info_t *)info->arg;
+//
+//	/* initialize if we are not yet initialized */
+//	if (NULL == thread_ctx->state) {
+//
+//		channel = Malloc(sizeof(*channel));
+//		if ( != ARES_SUCCESS)
+
+
+/*  resolver = g_malloc0 (sizeof (ares_channel));
+
+g_printf ("%s: memaddr: %X\n", __func__, resolver);
+
+  gint rc;
+
+  switch ((rc = ares_init_options(resolver, &ares_opts, ARES_OPT_LOOKUPS))) {
+    case ARES_SUCCESS:
+      break; nohing to be done here
+    case ARES_EFILE:
+    case ARES_ENOMEM:
+    case ARES_ENOTINITIALIZED:
+      g_error ("%s: ares_init: %s", __func__, ares_strerror (rc));
+      break; never reached
+    default:
+      g_error ("%s: ares_init: unknown error", __func__);
+      break; never reached
+  }
+*/
 
   // XXX: start working on thread pool here!
 

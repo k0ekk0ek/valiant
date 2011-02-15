@@ -6,124 +6,69 @@
 #include <string.h>
 
 /* valiant includes */
-#include "check_str.h"
+#include "check.h"
 #include "utils.h"
 
+/* definitions */
+typedef struct check_info_str_struct check_info_str_t;
 
+struct check_info_str_struct {
+  int   match;
+  int   nomatch;
+  int   member;
+  char *pattern;
+};
+
+/* prototypes */
+check_t *check_str_alloc (void);
+void check_str_free (check_t *);
+check_t *check_static_str_create (int, int, bool, int, const char *);
+check_t *check_dynamic_str_create (int, int, bool, int, const char *);
+int check_static_str (check_t *, request_t *, score_t *);
+int check_static_str_nocase (check_t *, request_t *, score_t *);
+int check_dynamic_str (check_t *, request_t *, score_t *);
+int check_dynamic_str_nocase (check_t *, request_t *, score_t *);
+
+/**
+ * COMMENT
+ */
 check_str_t *
 check_str_alloc (void)
 {
-  check_str_t *chk_str;
+  check_t *check;
+  check_info_str_t *info;
 
-  if ((chk_str = malloc (sizeof (check_str_t))))
-    memset (chk_str, 0, sizeof (check_str_t));
+  if ((check = check_alloc ())) {
+    info = malloc (sizeof (check_info_str_t));
 
-  return chk_str;
-}
-
-
-int
-check_str_static (check_t *check, request_t *request, score_t *score)
-{
-	bool match;
-	char *left, *right;
-	check_str_t *extra;
-
-	// XXX: insert assertion
-	// XXX: only ASCII supported for now
-
-	extra = (check_str_t *) check->extra;
-
-	left = request_member (request, extra->left); // bails
-	right = extra->right;
-
-  g_printf ("%s: left: %s\nright: %s\n", __func__, left, right);
-
-	if (extra->fold) {
-		match = strcasecmp (left, right) ? false : true;
-
-		//free (left); // XXX: left should never be freed
-		//free (right);
-
-	} else {
-		match = strcmp (left, right) ? false : true;
-	}
-
-	return match ? check->plus : check->minus;
-}
-
-
-int
-check_str_dynamic (check_t *check, request_t *request, score_t *score)
-{
-  bool match = true;
-  char c1, c2;
-  char *left, *right;
-  char *p, *q, *t;
-  int i;
-	size_t n;
-	check_str_t *extra;
-
-  // XXX: insert assertion
-  // XXX: only ASCII supported for now
-
-  extra = (check_str_t *) check->extra;
-
-  left = request_member (request, extra->left);
-  right = extra->right;
-
-  for (p=left, q=right; match && *p && *q; p++, q++) {
-    if (q[0] == '%') {
-      q++;
-
-      if (q[0] != '%') {
-        for (i=0; isdigit (q[0]); q++) {
-          i = (i*10) + (q[0] - '0');
-        }
-
-        if (q[0] != '%')
-          panic ("%s: unsuspected end of attribute", __func__);
-
-        t = request_member (request, i);
-        n = strlen (t);
-
-        if (strncasecmp (p, t, n))
-          match = false;
-        else
-          p += (n-1);
-
-      } else if (p[0] != '%') {
-        match = false;
-      }
-
+    if (info) {
+      memset (info, 0, sizeof (check_info_str_t));
+      check->info = (void *) info;
     } else {
-      c1 = tolower (p[0]);
-      c2 = tolower (q[0]);
-
-      if (c1 != c2)
-        match = false;
+      check_free (check);
+      check = NULL;
     }
   }
 
-  return (match && p[0] == q[0]) ? check->plus : check->minus;
+  return check;
 }
 
 
 void
 check_str_free (check_t *check)
 {
-  check_str_t *chk_str;
+  check_info_str_t *info;
 
   if (check) {
-    if (check->extra) {
-      chk_str = (check_str_t *) check->extra;
+    if (check->info) {
+      info = (check_info_str_t *) check->info;
 
-      if (chk_str->right)
-        free (chk_str->right);
-      free (chk_str);
+      if (info->pattern)
+        free (info->pattern);
+      free (info);
     }
 
-    free (check);
+    check_free (check);
   }
 
   return;
@@ -131,182 +76,244 @@ check_str_free (check_t *check)
 
 
 check_t *
-check_str_create (int plus, int minus, char *left, char *right, bool fold)
+check_str_create (int match, int nomatch, bool nocase, int member,
+                  const char *pattern)
 {
-  check_t *chk;
-  check_str_t *chk_str;
+  if (check_dynamic_pattern (pattern))
+    return check_dynamic_str_create (match, nomatch, nocase, member, pattern);
 
-	bool dynamic = false;
-	char *p, *q, *s;
-  int i;
-  size_t n;
+  return check_static_str_create (match, nomatch, nocase, member, pattern);
+}
 
-  /* check if both left and right are set, but only during debug */
-  assert (left);
-  assert (right);
 
-  if (! (chk = check_alloc ()))
-    bail ("%s: check_alloc: %s", __func__, strerror (errno));
-  if (! (chk_str = check_str_alloc ()))
+check_t *
+check_static_str_create (int match, int nomatch, bool nocase, int member,
+                         const char *pattern, int *errnum)
+{
+  check_t *check;
+  check_info_str_t *info;
+
+  if (! (check = check_str_alloc ()))
     bail ("%s: check_str_alloc: %s", __func__, strerror (errno));
 
+  info = (check_info_str_t *) check->info;
+  info->match = match;
+  info->nomatch = nomatch;
+  info->member = member;
+  info->pattern = check_unescape_pattern (pattern);
 
-  /* check if dynamic string compare */
-  for (p=right; *p && ! dynamic; p++) {
-    if (*(p) == '%' && *(p+1) != '%')
-      dynamic = true;
-  }
+  if (nocase)
+    check->check_fn = &check_static_str_nocase;
+  else
+    check->check_fn = &check_static_str;
 
-  n = (size_t) strlen (right);
+  check->free_fn = &check_str_free;
 
-  if (! (s = malloc (n+1)))
-    panic ("%s: malloc: %s", __func__, strerror (errno));
+  return check;
+}
 
-  chk->plus = plus;
-  chk->minus = minus;
-  chk->extra = (void *) chk_str;
-  chk->free_fn = &check_str_free;
-  chk_str->fold = fold ? true : false;
-  chk_str->left = request_member_id (left);
-  chk_str->right = s;
 
-  if (dynamic) {
-    /*
-     * Dynamic string compare. Replace attribute name with numerical
-     * identifier to speed up the process at runtime.
-     */
-    for (p=right, q=NULL; *p; ) {
-      if (q) {
-        if (*p == '%') {
-          n = (size_t) (p - q);
-          i = request_member_id_len (q, n);
+check_t *
+check_dynamic_str_create (int match, int nomatch, bool nocase, int member,
+                          const char *pattern, int *errnum)
+{
+  check_t *check;
+  check_info_str_t *info;
 
-          if (i < 0)
-            panic ("%s: invalid attribute %*s", __func__, n, q);
-          if (sprintf (s, "%%%i%%", i) < 0)
-            bail ("%s: g_sprintf: %s", __func__, strerror (errno));
+  if (! (check = check_str_alloc ()))
+    bail ("%s: check_str_alloc: %s", __func__, strerrno (errno));
 
-          q = NULL;
-        }
-      
-      } else {
-        if (*p == '%' && *(p+1) && *(p+1) != '%')
-          q = ++p;
-        else
-          *s++ = *p++;
-      }
-    }
+  info = (check_info_str_t *) check->info;
+  info->match = match;
+  info->nomatch = nomatch;
+  info->member = member;
+  info->pattern = check_shorten_pattern (pattern);
 
-    chk->check_fn = &check_str_dynamic;
+  if (nocase)
+    check->check_fn = &check_dynamic_str_nocase;
+  else
+    check->check_fn = &check_dynamic_str;
 
-  } else {
-    /*
-     * Static string compare. Remove escaped percent signs and assign static
-     * string comparison function.
-     */
-    for (p=right; *p; p++) {
-      if (*(p) == '%' && *(p+1) != '\0')
-      	p++;
+  check->free_fn = &check_str_free;
 
-      *s++ = *p;
-    }
-
-    chk->check_fn = &check_str_static;
-  }
-
-	return chk;
+	return check;
 }
 
 
 /**
  * COMMENT
  */
-check_t *
-cfg_to_check_str (cfg_t *section)
+int
+check_static_str (check_t *check, request_t *request, score_t *score)
 {
-  check_t *check;
+  check_info_str_t *info;
 
-  char *attribute;
-  char *format;
-  int positive;
-  int negative;
-  bool fold;
+  int match;
+  char *member;
 
-  if (! (attribute = cfg_getstr (section, "attribute")))
-    panic ("%s: attribute undefined\n", __func__);
-  if (! (format = cfg_getstr (section, "format")))
-    panic ("%s: format undefined\n", __func__);
+  info = (check_info_str_t *) check->info;
+  member = request_member (request, info->member);
+    
+  if (strcmp (member, info->pattern) == 0)
+    score_update (score, info->match);
+  else
+    score_update (score, info->nomatch);
 
-  attribute = strdup (attribute);
-  format = strdup (format);
-
-  positive = (int) (cfg_getfloat (section, "positive") * 100);
-  negative = (int) (cfg_getfloat (section, "negative") * 100);
-  fold = cfg_getbool (section, "case-sensitive");
-
-  g_printf ("%s: attribute: %s, format: %s, positive: %d, negative: %d, fold: %s\n",
-  __func__,
-  attribute,
-  format,
-  positive,
-  negative,
-  fold ? "true" : "false");
-
-  return check_str_create (positive, negative, attribute, format, fold);
+  return CHECK_SUCCESS;
 }
 
 
+/**
+ * COMMENT
+ */
+int
+check_static_str_nocase (check_t *check, request_t *request, score_t *score)
+{
+  check_info_str_t *info;
+
+  int match;
+  char *member;
+
+  info = (check_info_str_t *) check->info;
+  member = request_member (request, info->member);
+
+  if (strcasecmp (member, info->pattern) == 0)
+    score_update (score, info->match);
+  else
+    score_update (score, info->nomatch);
+
+  return CHECK_SUCCESS;
+}
 
 
+/**
+ * COMMENT
+ */
+int
+check_str_dynamic (check_t *check, request_t *request, score_t *score)
+{
+  check_info_str_t *info;
+
+  bool match;
+  char *member, *buf, *p1, *p2, *p3;
+  int len;
+  long id;
+
+  info = (check_info_str_t *) check->info;
+  match = true;
+  member = request_member (request, info->member);
+
+  if (! member)
+    panic ("%s: invalid member id: %d", __func__, info->member);
+
+  for (p1=member, p2=info->pattern; match && *p1 && *p2; p1++, p2++) {
+    if (p2[0] == '%') {
+      p2++;
+
+      if (p2[0] != '%') {
+        id = strtol (p2, &p3, 0);
+
+        if ((id == 0 && errno == EINVAL)
+         || (id == LONG_MAX && errno == ERANGE))
+          panic ("%s: invalid member id in pattern: %s", __func__
+                 info->pattern);
+        if (p3[0] != '%')
+          panic ("%s: unexpected end of member id in pattern: %s", __func__
+                 info->pattern);
+
+        buf = request_member (request, id);
+
+        if (! buf)
+          panic ("%s: invalid member id in pattern: %s", __func__,
+                 info->pattern);
+
+        len = strlen (buf);
+
+        if (strncmp (p1, buf, len) == 0) {
+          p1 += len;
+          p2  = p3;
+        } else {
+          match = false;
+        }
+      } else if (p1[0] != '%') {
+        match = false;
+      }
+    } else if (p1[0] != p2[0]) {
+      match = false;
+    }
+  }
+
+  if (! match || p1[0] != p2[0])
+    score_update (score, info->nomatch);
+  else
+    score_update (score, info->match);
+
+  return CHECK_SUCCESS;
+}
 
 
+/**
+ * COMMENT
+ */
+int
+check_str_dynamic_nocase (check_t *check, request_t *request, score_t *score)
+{
+  check_info_str_t *info;
 
+  bool match;
+  char *member, *buf, *p1, *p2, *p3;
+  int len;
+  long id;
 
+  info = (check_info_str_t *) check->info;
+  match = true;
+  member = request_member (request, info->member);
 
+  if (! member)
+    panic ("%s: invalid member id: %d", __func__, info->member);
 
+  for (p1=member, p2=info->pattern; match && *p1 && *p2; p1++, p2++) {
+    if (p2[0] == '%') {
+      p2++;
 
+      if (p2[0] != '%') {
+        id = strtol (p2, &p3, 0);
 
+        if ((id == 0 && errno == EINVAL)
+         || (id == LONG_MAX && errno == ERANGE))
+          panic ("%s: invalid member id in pattern: %s", __func__
+                 info->pattern);
+        if (p3[0] != '%')
+          panic ("%s: unexpected end of member id in pattern: %s", __func__
+                 info->pattern);
 
+        buf = request_member (request, id);
 
+        if (! buf)
+          panic ("%s: invalid member id in pattern: %s", __func__,
+                 info->pattern);
 
+        len = strlen (buf);
 
+        if (strncasecmp (p1, buf, len) == 0) {
+          p1 += len;
+          p2  = p3;
+        } else {
+          match = false;
+        }
+      } else if (p1[0] != '%') {
+        match = false;
+      }
+    } else if (tolower (p1[0]) != tolower (p2[0])) {
+      match = false;
+    }
+  }
 
+  if (! match || tolower (p1[0]) != tolower (p2[0]))
+    score_update (score, info->nomatch);
+  else
+    score_update (score, info->match);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  return CHECK_SUCCESS;
+}
 
