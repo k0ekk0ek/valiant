@@ -4,55 +4,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* valiant includes */
-#include "check.h"
+#include "check_common.h"
+#include "check_str.h"
 #include "utils.h"
 
 /* definitions */
 typedef struct check_info_str_struct check_info_str_t;
 
 struct check_info_str_struct {
-  int   match;
-  int   nomatch;
-  int   member;
+  int member;
   char *pattern;
+  int weight;
 };
 
 /* prototypes */
-check_t *check_str_alloc (void);
 void check_str_free (check_t *);
-check_t *check_static_str_create (int, int, bool, int, const char *);
-check_t *check_dynamic_str_create (int, int, bool, int, const char *);
+//check_t *check_static_str_create (int, int, bool, int, const char *);
+//check_t *check_dynamic_str_create (int, int, bool, int, const char *);
 int check_static_str (check_t *, request_t *, score_t *);
 int check_static_str_nocase (check_t *, request_t *, score_t *);
 int check_dynamic_str (check_t *, request_t *, score_t *);
 int check_dynamic_str_nocase (check_t *, request_t *, score_t *);
-
-/**
- * COMMENT
- */
-check_str_t *
-check_str_alloc (void)
-{
-  check_t *check;
-  check_info_str_t *info;
-
-  if ((check = check_alloc ())) {
-    info = malloc (sizeof (check_info_str_t));
-
-    if (info) {
-      memset (info, 0, sizeof (check_info_str_t));
-      check->info = (void *) info;
-    } else {
-      check_free (check);
-      check = NULL;
-    }
-  }
-
-  return check;
-}
-
 
 void
 check_str_free (check_t *check)
@@ -74,7 +49,6 @@ check_str_free (check_t *check)
   return;
 }
 
-
 check_t *
 check_str_create (int match, int nomatch, bool nocase, int member,
                   const char *pattern)
@@ -88,13 +62,13 @@ check_str_create (int match, int nomatch, bool nocase, int member,
 
 check_t *
 check_static_str_create (int match, int nomatch, bool nocase, int member,
-                         const char *pattern, int *errnum)
+                         const char *pattern)
 {
   check_t *check;
   check_info_str_t *info;
 
-  if (! (check = check_str_alloc ()))
-    bail ("%s: check_str_alloc: %s", __func__, strerror (errno));
+  if ((check = CHECK_ALLOC (check_info_str_t)) == NULL)
+    bail ("%s: CHECK_ALLOC: %s", __func__, strerror (errno));
 
   info = (check_info_str_t *) check->info;
   info->match = match;
@@ -115,19 +89,21 @@ check_static_str_create (int match, int nomatch, bool nocase, int member,
 
 check_t *
 check_dynamic_str_create (int match, int nomatch, bool nocase, int member,
-                          const char *pattern, int *errnum)
+                          const char *pattern)
 {
   check_t *check;
   check_info_str_t *info;
 
-  if (! (check = check_str_alloc ()))
-    bail ("%s: check_str_alloc: %s", __func__, strerrno (errno));
+  if ((check = CHECK_ALLOC (check_info_str_t)) == NULL)
+    bail ("%s: CHECK_ALLOC: %s", __func__, strerrno (errno));
 
   info = (check_info_str_t *) check->info;
   info->match = match;
   info->nomatch = nomatch;
   info->member = member;
-  info->pattern = check_shorten_pattern (pattern);
+
+  if ((info->pattern = strdup (pattern)) == NULL)
+    bail ("%s: strdup: %s", __func__, strerrno (errno));
 
   if (nocase)
     check->check_fn = &check_dynamic_str_nocase;
@@ -139,22 +115,16 @@ check_dynamic_str_create (int match, int nomatch, bool nocase, int member,
 	return check;
 }
 
-
-/**
- * COMMENT
- */
 int
 check_static_str (check_t *check, request_t *request, score_t *score)
 {
+  char *mem;
   check_info_str_t *info;
 
-  int match;
-  char *member;
-
   info = (check_info_str_t *) check->info;
-  member = request_member (request, info->member);
+  mem = request_memberid (request, info->member);
     
-  if (strcmp (member, info->pattern) == 0)
+  if (strcmp (mem, info->pattern) == 0)
     score_update (score, info->match);
   else
     score_update (score, info->nomatch);
@@ -162,22 +132,16 @@ check_static_str (check_t *check, request_t *request, score_t *score)
   return CHECK_SUCCESS;
 }
 
-
-/**
- * COMMENT
- */
 int
 check_static_str_nocase (check_t *check, request_t *request, score_t *score)
 {
+  char *mem;
   check_info_str_t *info;
 
-  int match;
-  char *member;
-
   info = (check_info_str_t *) check->info;
-  member = request_member (request, info->member);
+  mem = request_memberid (request, info->member);
 
-  if (strcasecmp (member, info->pattern) == 0)
+  if (strcasecmp (mem, info->pattern) == 0)
     score_update (score, info->match);
   else
     score_update (score, info->nomatch);
@@ -185,135 +149,103 @@ check_static_str_nocase (check_t *check, request_t *request, score_t *score)
   return CHECK_SUCCESS;
 }
 
-
-/**
- * COMMENT
- */
 int
-check_str_dynamic (check_t *check, request_t *request, score_t *score)
+check_dynamic_str (check_t *check, request_t *request, score_t *score)
 {
+  char *mem1, *mem2;
+  char *p1, *p2;
   check_info_str_t *info;
 
-  bool match;
-  char *member, *buf, *p1, *p2, *p3;
-  int len;
-  long id;
-
   info = (check_info_str_t *) check->info;
-  match = true;
-  member = request_member (request, info->member);
+  mem1 = request_memberid (request, info->member);
 
-  if (! member)
-    panic ("%s: invalid member id: %d", __func__, info->member);
+  for (p1=info->pattern; *mem1 && *p1; p1++) {
+    if (*p1 == '%' && *(++p1) != '%') {
 
-  for (p1=member, p2=info->pattern; match && *p1 && *p2; p1++, p2++) {
-    if (p2[0] == '%') {
-      p2++;
+      if ((p2 = strchr (p1, '%')) == NULL)
+        return CHECK_ERR_PATTERN;
 
-      if (p2[0] != '%') {
-        id = strtol (p2, &p3, 0);
+      mem2 = request_membern (request, p1, (size_t) (p2 - p1));
+      p1 = p2;
 
-        if ((id == 0 && errno == EINVAL)
-         || (id == LONG_MAX && errno == ERANGE))
-          panic ("%s: invalid member id in pattern: %s", __func__
-                 info->pattern);
-        if (p3[0] != '%')
-          panic ("%s: unexpected end of member id in pattern: %s", __func__
-                 info->pattern);
+      if (mem2) {
+        for (; *mem1 && *mem1 == *mem2; mem1++, mem2++)
+          ;
 
-        buf = request_member (request, id);
-
-        if (! buf)
-          panic ("%s: invalid member id in pattern: %s", __func__,
-                 info->pattern);
-
-        len = strlen (buf);
-
-        if (strncmp (p1, buf, len) == 0) {
-          p1 += len;
-          p2  = p3;
+        if (*mem2 == '\0') {
+          if (*mem1 == '\0')
+            goto match;
         } else {
-          match = false;
+          goto nomatch;
         }
-      } else if (p1[0] != '%') {
-        match = false;
       }
-    } else if (p1[0] != p2[0]) {
-      match = false;
+    } else if (*mem1 == *p1) {
+      mem1++;
+      //p1++;
+    } else {
+      break;
     }
   }
 
-  if (! match || p1[0] != p2[0])
-    score_update (score, info->nomatch);
-  else
+  if (*mem1 == *p1) {
+match:
     score_update (score, info->match);
+  } else {
+nomatch:
+    score_update (score, info->nomatch);
+  }
 
   return CHECK_SUCCESS;
 }
 
+#define CHRCASECMP(c1, c2) ((c1) == (c2) || (tolower ((c1)) == tolower ((c2))))
 
-/**
- * COMMENT
- */
 int
-check_str_dynamic_nocase (check_t *check, request_t *request, score_t *score)
+check_dynamic_str_nocase (check_t *check, request_t *request, score_t *score)
 {
+  char *mem1, *mem2;
+  char *p1, *p2;
   check_info_str_t *info;
 
-  bool match;
-  char *member, *buf, *p1, *p2, *p3;
-  int len;
-  long id;
+  info = (check_str_t *) check->info;
+  mem1 = request_memberid (check->member);
 
-  info = (check_info_str_t *) check->info;
-  match = true;
-  member = request_member (request, info->member);
+  for (p1=info->pattern; *mem1 && *p1; p1++) {
+    if (*p1 == '%' && *(++p1) != '%') {
 
-  if (! member)
-    panic ("%s: invalid member id: %d", __func__, info->member);
+      if ((p2 = strchr (p1, '%')) == NULL)
+        return CHECK_ERR_PATTERN;
 
-  for (p1=member, p2=info->pattern; match && *p1 && *p2; p1++, p2++) {
-    if (p2[0] == '%') {
-      p2++;
+      mem2 = request_membern (p1, (size_t) (p2 - p1));
+      p1 = p1;
 
-      if (p2[0] != '%') {
-        id = strtol (p2, &p3, 0);
+      for (; *mem1 && CHRCASECMP (*mem1, *mem2) ; *mem1++, *mem2++)
+        ;
 
-        if ((id == 0 && errno == EINVAL)
-         || (id == LONG_MAX && errno == ERANGE))
-          panic ("%s: invalid member id in pattern: %s", __func__
-                 info->pattern);
-        if (p3[0] != '%')
-          panic ("%s: unexpected end of member id in pattern: %s", __func__
-                 info->pattern);
-
-        buf = request_member (request, id);
-
-        if (! buf)
-          panic ("%s: invalid member id in pattern: %s", __func__,
-                 info->pattern);
-
-        len = strlen (buf);
-
-        if (strncasecmp (p1, buf, len) == 0) {
-          p1 += len;
-          p2  = p3;
-        } else {
-          match = false;
-        }
-      } else if (p1[0] != '%') {
-        match = false;
+      if (*mem2 == '\0') {
+        if (*mem1 == '\0')
+          goto match;
+      } else {
+        goto nomatch;
       }
-    } else if (tolower (p1[0]) != tolower (p2[0])) {
-      match = false;
+
+    } else if (CHRCASECMP(*mem1, *p1)) {
+      mem1++;
+    } else {
+      break;
     }
   }
 
-  if (! match || tolower (p1[0]) != tolower (p2[0]))
-    score_update (score, info->nomatch);
-  else
+  if (CHRCASECMP (*mem1, *p1)) {
+match:
     score_update (score, info->match);
+  } else {
+nomatch:
+    score_update (score, info->nomatch);
+  }
 
   return CHECK_SUCCESS;
 }
+
+#undef CHRCASECMP
 

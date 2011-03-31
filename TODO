@@ -1,0 +1,24 @@
+v 1.  Remove all GLIB code from sources.
+v 1a. Rename score_writers_* to score_(un)lock
+  2.  Remove the nomatch option from checks? See below.
+  3.  Rename the match option to weight.
+  3a. Document code.
+v 4.  Remove member to member id transformation from str and pcre checks.
+  5.  Tidy and refactor parts of check_str.c.
+  6.  Add comments to check_str.c.
+v 7.  Tidy, refactor and finish check_pcre.c.
+v 8.  Remove check_*_alloc from sources and replace by CHECK_ALLOC.
+v 9.  Make DNSBL checks work.
+  10. Implement RHSBL checks.
+  11. Implement DNSWL checks.
+  12. Implement IPv6 support for DNSBL checks.
+v 13. Implement bitmask support for DNSBL checks.
+  14. Implement escaping of special characters in hostnames etc in PCRE checks.
+  15. Tidy the implementation of check_dnsbl.c
+  16. Reevaluate thread pool implementation, especially the mutex/condition
+      handling part.
+
+11.
+I can't think of why I implemented the nomatch option, does it do anything
+usefull? I might have used it to be able to negate checks, but a negate option
+would be more logical?

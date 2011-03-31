@@ -1,5 +1,7 @@
-/* system includes */
+﻿/* system includes */
+#include <assert.h>
 #include <arpa/inet.h>
+#include <confuse.h>
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
@@ -12,44 +14,38 @@
 #include <time.h>
 
 /* valiant includes */
+#include "check.h"
 #include "check_dnsbl.h"
+#include "slist.h"
 #include "thread_pool.h"
+#include "utils.h"
 
-
-// XXX: If I'm to include timeout information... I should also include when it
-//      was last checked etc...
-// XXX: I probably also need the interval etc...
-// XXX: time_t time_slot; // XXX: interval could be statically defined... 
-//      we don't have to make everything configurable!
-// TIME_FRAME defines how many seconds from start errors incremented.
-
-
-
+/* defines */
 #define TIME_FRAME (60)
 #define MAX_ERRORS (10)
-
 #define HALF_HOUR_IN_SECONDS (1800) /* minimum back off time */
-
-#define BACK_OFF_TIME HALF_HOUR_IN_SECONDS /* 30 minutes in seconds */
-// XXX: I'm better of having a max multiplier here!
-// unfortunately... a multiplier doesn't speak to anyones imagination...!
+#define BACK_OFF_TIME HALF_HOUR_IN_SECONDS /* half hour in seconds */
 #define MAX_BACK_OFF_TIME (86400) /* 1 day in seconds */
-
 
 #define CHECK_DNSBL_SKIP (0)
 #define CHECK_DNSBL_NO_SKIP (1)
 #define CHECK_DNSBL_ERROR (2)
 
+typedef struct dnsbl_weight_struct dnsbl_weight_t;
 
-int check_dnsbl_chk (check_t *, request_t *, score_t *);
+struct dnsbl_weight_struct {
+  unsigned long subnet;
+  unsigned long netmask;
+  int weight;
+};
 
+typedef struct check_info_dnsbl_struct check_info_dnsbl_t;
 
-typedef struct check_dnsbl_struct check_dnsbl_t;
-
-struct check_dnsbl_struct {
+struct check_info_dnsbl_struct {
   char *zone;
   time_t start;
   time_t back_off;
+  slist_t *weights;
   int errors; /* number of errors within time frame */
   int power; /* number of times dnsbl has been disabled */
   int max_power; /* maximum power... if this is reached... MAX_BACK_OFF_TIME is used instead */
@@ -59,103 +55,40 @@ struct check_dnsbl_struct {
 SPF_server_t *spf_server;
 thread_pool_t *thread_pool;
 
-
-/*
- * reverse_inet_addr	- reverse ipaddress string for dnsbl query
- *                        e.g. 1.2.3.4 -> 4.3.2.1
- */
-char *
-reverse_inet_addr(char *ipstr)
-{
-	unsigned int ipa, tmp;
-	int i;
-	int ret;
-	struct in_addr inaddr;
-	const char *ptr;
-	//char tmpstr[INET_ADDRSTRLEN];
-	size_t iplen;
-
-	if ((iplen = strlen(ipstr)) > INET_ADDRSTRLEN) {
-		g_error ("invalid ipaddress: %s\n", ipstr);
-		return NULL;
-	}
-
-  char *tmpstr = malloc (iplen+1);
-  memset (tmpstr, 0, iplen+1);
-
-	ret = inet_pton(AF_INET, ipstr, &inaddr);
-	switch (ret) {
-	case -1:
-		g_error("reverse_inet_addr: inet_pton");
-		return NULL;
-		break;
-	case 0:
-		g_error("not a valid ip address: %s", ipstr);
-		return NULL;
-		break;
-	}
-
-	/* case default */
-	ipa = inaddr.s_addr;
-
-	tmp = 0;
-
-	for (i = 0; i < 4; i++) {
-		tmp = tmp << 8;
-		tmp |= ipa & 0xff;
-		ipa = ipa >> 8;
-	}
-
-	/*
-	 * this tmpstr hack here is because at least FreeBSD seems to handle
-	 * buffer lengths differently from Linux and Solaris. Specifically,
-	 * with inet_ntop(AF_INET, &tmp, ipstr, iplen) one gets a truncated
-	 * address in ipstr in FreeBSD.
-	 */
-	ptr = inet_ntop(AF_INET, &tmp, tmpstr, INET_ADDRSTRLEN);
-	if (!ptr) {
-		g_error("inet_ntop");
-		return NULL;
-	}
-	//assert(strlen(tmpstr) == iplen);
-	//strncpy(ipstr, tmpstr, iplen);
-
-	return tmpstr;
-}
+/* prototypes */
+dnsbl_weight_t *dnsbl_weight_create (const char *, float);
+int slist_sort_dnsbl_weight (void *, void *);
+int check_dnsbl_free (check_t *);
 
 
-/**
- * COMMENT
- */
-int /* seems I must be able to do more than one read lock! */
+
+
+
+int
 check_dnsbl_skip (check_t *check)
 {
-  check_dnsbl_t *extra;
+  check_info_dnsbl_t *info;
+  int errnum, skip;
   time_t now;
 
-  extra = (check_dnsbl_t *) check->extra;
+  assert (check);
+
+  info = (check_info_dnsbl_t *) check->info;
   now = time (NULL);
 
-
-  int ret;
-  int skip;
-
-  if ((ret = pthread_rwlock_rdlock (extra->lock))) {
-    // error
+  if ((errnum = pthread_rwlock_rdlock (info->lock))) {
+    error ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (errnum));
     return CHECK_DNSBL_ERROR;
   }
 
-  // now find out if we should skip!
-
-  if (extra->back_off && extra->back_off > now) {
+  if (info->back_off && info->back_off > now) {
     skip = CHECK_DNSBL_SKIP;
   } else {
     skip = CHECK_DNSBL_NO_SKIP;
   }
 
-  if ((ret = pthread_rwlock_unlock (extra->lock))) {
-    // should never... ever... happen
-    panic ("%s: pthread_rwlock_unlock: returned an error... which isn't possible", __func__);
+  if ((errnum = pthread_rwlock_unlock (info->lock))) {
+    panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (errnum));
   }
 
   return skip;
@@ -165,44 +98,43 @@ check_dnsbl_skip (check_t *check)
 void
 check_dnsbl_error (check_t *check)
 {
-  check_dnsbl_t *extra;
+  check_info_dnsbl_t *info;
   int ret;
 
-  extra = (check_dnsbl_t *) check->extra;
+  info = (check_info_dnsbl_t *) check->info;
 
   time_t now = time(NULL);
 
 
-  if ((ret = pthread_rwlock_wrlock (extra->lock))) {
+  if ((ret = pthread_rwlock_wrlock (info->lock))) {
     //return CHECK_DNSBL_ERROR;
     return;
   }
 
   // well ... increase the counter... but should we start over???
 
-  if (now > extra->back_off) {
+  if (now > info->back_off) {
     /* error counter should only be increased if we're within the allowed time
-       frame. */
-    if (extra->start > extra->back_off && extra->start > (now - TIME_FRAME)) {
+frame. */
+    if (info->start > info->back_off && info->start > (now - TIME_FRAME)) {
       /* ... */
-      if (++extra->errors >= MAX_ERRORS) {
-        extra->errors = 0;
+      if (++info->errors >= MAX_ERRORS) {
+        info->errors = 0;
 
         /*
-         * The current power must be updated, since the check might not have
-         * failed for a long time.
-         
-          here. The general idea here is to get
-         * the difference between back off time and now and divide it by the
-         * number of seconds in BACK_OFF_TIME. That gives us the multiplier.
-         * then we substrac the value of power either until power reaches 1
-         * or the multiplier is smaller than one!
-         */
-        int power = extra->power;
+* The current power must be updated, since the check might not have
+* failed for a long time.
+here. The general idea here is to get
+* the difference between back off time and now and divide it by the
+* number of seconds in BACK_OFF_TIME. That gives us the multiplier.
+* then we substrac the value of power either until power reaches 1
+* or the multiplier is smaller than one!
+*/
+        int power = info->power;
         double multiplier;
-        time_t time_slot = (now - extra->back_off);
+        time_t time_slot = (now - info->back_off);
 
-        if (extra->power >= extra->max_power) {
+        if (info->power >= info->max_power) {
           if (time_slot > MAX_BACK_OFF_TIME) {
             power <<= 1;
             time_slot -= MAX_BACK_OFF_TIME;
@@ -227,171 +159,109 @@ check_dnsbl_error (check_t *check)
         // then the log2 of the multiplier
 
         /* now that the power is updated we increase it... and set the back
-           off time! */
-        extra->power = power;
+off time! */
+        info->power = power;
 
-        if (extra->power < extra->max_power) {
-          extra->power >>= 1;
-          extra->back_off = now + (BACK_OFF_TIME * extra->power);
+        if (info->power < info->max_power) {
+          info->power >>= 1;
+          info->back_off = now + (BACK_OFF_TIME * info->power);
         } else {
-          extra->power = extra->max_power;
-          extra->back_off = now + MAX_BACK_OFF_TIME;
+          info->power = info->max_power;
+          info->back_off = now + MAX_BACK_OFF_TIME;
         }
       }
 
     } else {
-      extra->start = time (NULL);
-      extra->errors = 1;
-
-
-
-      //
+      info->start = time (NULL);
+      info->errors = 1;
     }
   }
 
 
-  if ((ret = pthread_rwlock_unlock (extra->lock)))
+  if ((ret = pthread_rwlock_unlock (info->lock)))
     return;
     //return CHECK_DNSBL_ERROR;
 
   return;
 }
 
-
-/**
- * This function actually does the real work!
- */
 void
 check_dnsbl_worker (void *arg)
 {
-  // 1. SPF_server... just a member here!
-  // 2. score... you know... to update etc!
-  // 3. check... you know... to update timeout behaviour etc
-  // 4. and of course... the zone info... or the request etc!
-  // Well... we'll need a structure to hold the information!
-
-  fprintf (stderr, "%s: enter\n", __func__);
-
-  SPF_dns_rr_t		*dns_rr = NULL;
-
+  unsigned long address;
+  char query[HOST_NAME_MAX], reverse[INET_ADDRSTRLEN];
   check_t *check;
-  check_dnsbl_t *check_dnsbl;
+  check_info_dnsbl_t *info;
+  dnsbl_weight_t *weight, *heaviest;
+  int i, n;
   request_t *request;
   score_t *score;
+  slist_t *cur;
+  SPF_dns_rr_t *dns_rr;
 
   check = ((check_arg_t *) arg)->check;
-  check_dnsbl = (check_dnsbl_t *) check->extra;
+  info = (check_info_dnsbl_t *) check->info;
   request = ((check_arg_t *) arg)->request;
   score = ((check_arg_t *) arg)->score;
 
+  n = reverse_inet_addr (request->client_address, reverse, INET_ADDRSTRLEN);
+  if (n < 0)
+    panic ("%s: reverse_inet_addr: %s", __func__, strerror (errno));
 
-  //extern SPF_server *spf_server;
+  n = snprintf (query, HOST_NAME_MAX, "%s.%s", reverse, info->zone);
+  if (n < 0 || n > HOST_NAME_MAX)
+    panic ("%s: dnsbl query exceeded maximum hostname length", __func__);
 
-  char *str, *ptr;
-  size_t len;
-
-  /* length of the needed buffer is zone + 1 for dot + len for client_ip + 1 for termination! */
-  // of course this might only be true for ipv4
-
-  char *rev_inet = reverse_inet_addr (request->client_address);
-
-  len = strlen (rev_inet) + strlen (check_dnsbl->zone) + 10;
-
-
-  char *buf = malloc (len);
-  memset (buf, 0, len);
-  sprintf (buf, "%s.%s", rev_inet, check_dnsbl->zone);
-  // XXX: handle errors!
-
-
-  dns_rr = SPF_dns_lookup (spf_server->resolver, buf, ns_t_a, 0);
-  // XXX: handle errors!
-
-  // TRY_AGAIN specifies hostname lookup failure!
-  //if (dns_rr->herrno == )
-
-  // XXX: need to do some further checking here etc...
-
-fprintf (stderr, "%s: SPF_dns_lookup->herrno: %d\n", __func__, dns_rr->herrno);
+  dns_rr = SPF_dns_lookup (spf_server->resolver, query, ns_t_a, 0);
 
   switch (dns_rr->herrno) {
+    case NO_DATA:
+      /* This ugly hack is necessary because of what I think is a bug in
+         SPF_dns_lookup_resolve. */
+      for (i=0; i < dns_rr->rr_buf_num && dns_rr->rr[i]; i++)
+        ;
+
+      if (i)
+        dns_rr->num_rr = i;
+
+      /* fall through */
     case NETDB_SUCCESS:
-      // great we have a result
-      // right ... so ... fetch the score and unlock the score
-      fprintf (stderr, "%s: result: success, score: %d\n", __func__, check->plus);
-      score_update (score, check->plus);
+      heaviest = NULL;
+      for (i=0; i < dns_rr->num_rr && dns_rr->rr[i]; i++) {
+        address = ntohl (dns_rr->rr[i]->a.s_addr);
+
+        for (cur=info->weights; cur; cur=cur->next) {
+          weight = (dnsbl_weight_t *)cur->data;
+
+          if ((address & weight->netmask) == (weight->subnet & weight->netmask)) {
+            if (heaviest == NULL || heaviest->weight < weight->weight)
+              heaviest = weight;
+          }
+        }
+      }
+
+      if (heaviest)
+        score_update (score, heaviest->weight);
       break;
-    case HOST_NOT_FOUND:
-      score_update (score, check->minus);
-      fprintf (stderr, "%s: result: failure, score: %d\n", __func__, check->minus);
-      break;
-    case TRY_AGAIN:
+    case TRY_AGAIN: // SERVFAIL
       check_dnsbl_error (check);
-      fprintf (stderr, "%s: result: error\n", __func__);
       break;
   }
 
-        fprintf (stderr, "%s: result: success, score: %d\n", __func__, check->plus);
-
-  score_writers_down (score);
-
-  /* evaluate the result like postfix and postfwd different ip's mean different
-     things... think of a neat way here! */
-
-  fprintf (stderr, "%s: exit\n", __func__);
-
-
-  //
-  //check_t *check;
-  //score_t *score;
-  //
-  //check = ((score_callback_t *) arg)->check;
-  //score = ((score_callback_t *) arg)->score;
-  //
-  //g_free (arg);
-  //
-  //
-  //switch (status) {
-  //  case ARES_SUCCESS:
-  //    //g_printf ("%s: it was successfull\n", __func__);
-  //    break;
-  //  default:
-  //    g_printf ("%s: ERROR: %s\n", __func__, ares_strerror (status));
-  //    return;
-  //    break;
-  //}
-  //
-  //
-  // need at least the check and the score here... so a typedef for a struct
-  // to hold the two of them will need to be created
-  // IMPLEMENT
-  // update score based on result
-  // get the score and the check
-  // free memory occupied by strange struct
-  // evaluate result
-  // update score
-  // remove writer from score
-  // bail... score should take over after I'm done
-  //
-  //score_writers_down (score);
-  //g_printf ("%s: writers down\n", __func__);
+  SPF_dns_rr_free (dns_rr);
+  score_unlock (score);
   return;
 }
 
 
 int
-check_dnsbl_chk (check_t *check, request_t *request, score_t *score)
+check_dnsbl (check_t *check, request_t *request, score_t *score)
 {
   check_arg_t *arg;
-  check_dnsbl_t *info;
+  check_info_dnsbl_t *info;
 
 
-  fprintf (stderr, "%s: entered", __func__);
-
-
-  // XXX: implement assertions here!
-
-  info = (check_dnsbl_t *) check->extra;
+  info = (check_info_dnsbl_t *) check->info;
 
   score_writers_up (score);
 
@@ -406,6 +276,8 @@ check_dnsbl_chk (check_t *check, request_t *request, score_t *score)
 
   return 0;
 
+  //fprintf (stderr, "%s: entered", __func__);
+  // XXX: implement assertions here!
   //g_printf ("%s: hostname: %s\n", __func__, ptr);
   //score_callback_t *arg = g_new0 (score_callback_t, 1);
   //arg->check = check;
@@ -425,82 +297,257 @@ check_dnsbl_chk (check_t *check, request_t *request, score_t *score)
 }
 
 
-check_dnsbl_t *
-check_dnsbl_alloc ()
+#define check_dnsbl_alloc() (check_alloc (sizeof (check_info_dnsbl_t)))
+
+check_t *
+check_dnsbl_create (cfg_t *section)
 {
-  check_dnsbl_t *check_dnsbl;
+  cfg_t *in;
+  check_t *check;
+  check_info_dnsbl_t *info;
+  dnsbl_weight_t *weight;
+  slist_t *weights, *cur;
 
-  if (! (check_dnsbl = malloc (sizeof (check_dnsbl_t)))) {
-    return NULL;
+  char *type, *zone;
+  unsigned int i, n;
+
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+
+  assert (section);
+//  assert (MAX_BACK_OFF_TIME < INT_MAX);
+//  assert (MAX_BACK_OFF_TIME > BACK_OFF_TIME);
+//  assert (BACK_OFF_TIME > HALF_HOUR_IN_SECONDS);
+
+  check = NULL;
+  info = NULL;
+  weights = NULL;
+
+  /* allocate and initialize check */
+  if ((check = check_dnsbl_alloc ()) == NULL) {
+    error ("%s: check_dnsbl_alloc: %s", __func__, strerror (errno));
+    goto failure;
+  }
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  info = (check_info_dnsbl_t *) check->info;
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+
+  info->lock = malloc (sizeof (pthread_rwlock_t));
+
+  if (pthread_rwlock_init (info->lock, NULL)) {
+    error ("%s: pthread_rwlock_info: %s", __func__, strerror (errno));
+    goto failure;
+  }
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  if ((type = cfg_getstr (section, "type")) == NULL) {
+    error ("%s: type should be one of dnsbl, dnswl, rhsbl", __func__);
+    goto failure;
+  }
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  if (strncasecmp (type, "dnsbl", 5) != 0 &&
+      strncasecmp (type, "dnswl", 5) != 0 &&
+      strncasecmp (type, "rhsbl", 5) != 0) {
+    error ("%s: type should be one of dnsbl, dnswl, rhsbl", __func__);
+    goto failure;
   }
 
-  if (! (check_dnsbl->lock = malloc (sizeof (pthread_rwlock_t)))) {
-    free (check_dnsbl);
-    return NULL;
+  if ((zone = cfg_getstr (section, "zone")) == NULL) {
+    error ("%s: zone empty, rendering check useless", __func__);
+    goto failure;
   }
 
-  return check_dnsbl;
+  if (cfg_getbool (section, "ipv6")) {
+    warning ("%s: IPv6 not yet supported, ignoring option", __func__);
+  }
+
+  if (! cfg_getbool (section, "ipv4")) {
+    error ("%s: IPv6 not yet supported and IPv4 disabled rendering check useless", __func__);
+    goto failure;
+  }
+
+  /* parse "in" sections and append them to weights */
+  for (i=0, n=cfg_size (section, "in"); i < n; i++) {
+    in = cfg_getnsec (section, "in", 0);
+
+    if (in) {
+      weight = dnsbl_weight_create (cfg_title (in), cfg_getfloat (in, "weight"));
+      if (weight == NULL)
+        goto failure;
+
+      // FIXME: handle errors
+      cur = slist_append (weights, weight);
+      if (weights == NULL)
+        weights = cur;
+    }
+  }
+
+  /* parse section weight and append it to weights */
+  weight = dnsbl_weight_create ("127.0.0.0/8", cfg_getfloat (section, "weight"));
+  if (weight == NULL)
+    goto failure;
+
+  // FIXME: handle errors
+  cur = slist_append (weights, weight);
+  if (weights == NULL)
+    weights = cur;
+  else
+    weights = slist_sort (weights, &slist_sort_dnsbl_weight);
+
+  if (strncasecmp (type, "dnsbl", 5) == 0) {
+    check->check_fn = &check_dnsbl;
+    check->free_fn = &check_dnsbl_free;
+  } else {
+    error ("%s: type %s not yet supported", __func__, type);
+    goto failure;
+  }
+
+  if ((info->zone = strdup (zone)) == NULL) {
+    error ("%s: strdup: %s", __func__, strerror (errno));
+    goto failure;
+  }
+
+  for (i=1, n = ceil ((MAX_BACK_OFF_TIME / BACK_OFF_TIME)); i < n; i<<=1)
+    ;
+
+  info->weights = weights;
+  info->max_power = i;
+
+  // FIXME: should be done differently
+  thread_pool = thread_pool_create ("dnsbl", 100, &check_dnsbl_worker);
+  spf_server = SPF_server_new(SPF_DNS_CACHE, 2);
+
+  return check;
+
+failure:
+  // FIXME: not freeing everything
+  check_dnsbl_free (check);
+
+  return NULL;
 }
 
+#undef check_dnsbl_alloc
 
-void
+int
 check_dnsbl_free (check_t *check)
 {
-  // XXX: IMPLEMENT
+  // FIXME: implement
+  return 0;
+}
+
+dnsbl_weight_t *
+dnsbl_weight_create (const char *network, float weight)
+{
+  // FIXME: cleanup
+  dnsbl_weight_t *w;
+  const char *func = "dnsbl_weight_create";
+  char addr[INET_ADDRSTRLEN], *p1, *p2;
+  int r, i;
+  struct in_addr address;
+  unsigned long netmask, subnet;
+  long bits;
+
+  assert (network);
+
+  for (p1=(char*)network, p2=addr;
+      *p1 != '\0' && *p1 != '/' && p2 < (addr+INET_ADDRSTRLEN);
+      *p2++ = *p1++)
+    ;
+
+  if (*p1 == '/') {
+    bits = strtol ((++p1), NULL, 10);
+
+    if (bits < 0 || bits > 32 || (bits == 0 && errno == EINVAL)) {
+      errno = EINVAL;
+      error ("%s: invalid presentation of network/bitmask: %s", func, network);
+      return NULL;
+    }
+  } else if (*p1 != '\0') {
+    error ("%s: invalid presentation of network/bitmask: %s", func, network);
+    return NULL;
+  }
+
+ *p2 = '\0';
+
+fprintf (stderr, "and the network is %s\n", addr);
+
+  r = inet_pton (AF_INET, addr, &address);
+  if (r <= 0) {
+    if (r == 0)
+      error ("%s: invalid notation... error must be fancied", func);
+    else
+      error ("%s: %s", func, strerror (errno));
+    return NULL;
+  }
+
+  for (netmask=0, i=0; i < bits; i++)
+    netmask |= 1 << (31 - i);
+
+
+fprintf (stderr, "%s (%d): network: %s\n", __func__, __LINE__, inet_ntop(AF_INET, &address, addr, INET_ADDRSTRLEN));
+  subnet = ntohl (address.s_addr);
+fprintf (stderr, "%s (%d): network: %s\n", __func__, __LINE__, inet_ntop(AF_INET, &subnet, addr, INET_ADDRSTRLEN));
+  // XXX: handle possible errors!
+  //
+  //
+  w = malloc (sizeof (dnsbl_weight_t));
+  if (w == NULL) {
+    error ("%s: malloc: %s", func, strerror (errno));
+    return NULL;
+  }
+
+  w->subnet = subnet;
+  w->netmask = netmask;
+  w->weight = (int) weight;
+
+  return w;
+}
+
+void
+dnsbl_weight_free (void *weight)
+{
+  if (weight)
+    free (weight);
   return;
 }
 
-
-check_t *
-check_dnsbl_create (int plus, int minus, const char *zone)
+int
+slist_sort_dnsbl_weight (void *p1, void *p2)
 {
-  check_t *check;
-  check_dnsbl_t *check_dnsbl;
+  dnsbl_weight_t *w1, *w2;
 
-  fprintf (stderr, "%s: enter\n", __func__);
+  w1 = (dnsbl_weight_t *)p1;
+  w2 = (dnsbl_weight_t *)p2;
 
-  if (! (check = check_alloc ())) {
-    fprintf (stderr, "%s: error: %s\n", __func__, strerror (errno));
-    return NULL;
-  }
+  if (w1->netmask > w2->netmask)
+    return -1;
+  if (w1->netmask < w2->netmask)
+    return  1;
 
-  check->plus = plus;
-  check->minus = minus;
-  check->check_fn = &check_dnsbl_chk;
-  check->free_fn = &check_dnsbl_free;
+  return 0;
+}
 
-  if (! (check_dnsbl = check_dnsbl_alloc ())) {
-    free (check); /* must cleanup after ourselves */
-    fprintf (stderr, "error1\n");
-    return NULL;
-  }
 
-  check->extra = (void *) check_dnsbl;
 
-  // now init some stuff
-  //extra->lock
-  if (pthread_rwlock_init (check_dnsbl->lock, NULL)) {
-    // XXX: error occurred! handle it!
-  }
 
-  check_dnsbl->zone = (char *) zone;
 
-  // create the thread pool!
-  // init the spf_server!
 
-  /* Maximum power is dynamically created because time limit might become
-     configurable at some point. */
 
-  if (MAX_BACK_OFF_TIME > INT_MAX)
-    fprintf (stderr, "%s: maximum back off time out of range", __func__);
-  if (MAX_BACK_OFF_TIME < BACK_OFF_TIME)
-    fprintf (stderr, "%s: back off time exceeds maximum value", __func__);
-  if (BACK_OFF_TIME < HALF_HOUR_IN_SECONDS)
-    fprintf (stderr, "%s: back off time exceeds minumum value", __func__);
+
+
+// XXX: If I'm to include timeout information... I should also include when it
+// was last checked etc...
+// XXX: I probably also need the interval etc...
+// XXX: time_t time_slot; // XXX: interval could be statically defined...
+// we don't have to make everything configurable!
+// TIME_FRAME defines how many seconds from start errors incremented.
+
+// XXX: I'm better of having a max multiplier here!
+// unfortunately... a multiplier doesn't speak to anyones imagination...!
+
+
 
   /* The idea here is to get the maximum value for multiplier and find the
-     first available power of two. By doing this we have a window of half the
-     value and thus every preceding power of two has a lower value */
+first available power of two. By doing this we have a window of half the
+value and thus every preceding power of two has a lower value */
 
   // the last power is check using max_back_off_time...
   // so ... what we do here... round it up, then decide what the maximum
@@ -509,25 +556,40 @@ check_dnsbl_create (int plus, int minus, const char *zone)
   // at this point we have the maximum multiplier
   /* result is exactly */
 
+/*
+check spamhaus {
+  type = dnsbl
+  zone = zen.spamhaus.org
+  in 127.0.0.4/30 {
+    weight = 4
+  }
+  in 127.0.0.2/32 {
+    weight = 8
+  }
+  # same as in 127.0.0.0/8 { weight = 1 }
+  weight = 1
+}
+*/
 
-  unsigned int boundry;
-  unsigned int max = ceil ((MAX_BACK_OFF_TIME / BACK_OFF_TIME));
-
-  for (boundry=1; boundry < max; boundry<<=1)
-    fprintf (stderr, "%s: boundry: %d, max: %d\n", __func__, boundry, max);
-
-  check_dnsbl->max_power = boundry;
 
   // XXX: must be done in a different way... this will cause trouble if we have
-  //      multiple dnsbl checks... blablabla
+  // multiple dnsbl checks... blablabla
   // XXX: should probably be moved to init... but what the heck right...
-  thread_pool = thread_pool_create ("dnsbl", 100, &check_dnsbl_worker);
-  spf_server = SPF_server_new(SPF_DNS_CACHE, 2);
 
-  fprintf (stderr, "%s: exit\n", __func__);
+ /* seems I must be able to do more than one read lock! */
 
-  return check;
-}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

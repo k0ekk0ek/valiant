@@ -9,9 +9,12 @@
 
 /* system includes */
 #include <errno.h>
-#include <pcre.h> /* support for Perl-compatible regular expressions */
+#include <pcre.h>
+#include <limits.h>
+#include <stdio.h> /* FIXME: must be removed, used for DEBUG only */
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* valiant includes */
 #include "check.h"
@@ -48,9 +51,6 @@ struct check_info_dynamic_pcre_struct {
 
 
 /* prototypes */
-
-check_t *check_static_pcre_alloc (void);
-check_t *check_dynamic_pcre_alloc (void);
 void check_static_pcre_free (check_t *);
 void check_dynamic_pcre_free (check_t *);
 check_t *check_static_pcre_create (int, int, bool, int, const char *);
@@ -58,59 +58,14 @@ check_t *check_dynamic_pcre_create (int, int, bool, int, const char *);
 int check_static_pcre (check_t *, request_t *, score_t *);
 int check_dynamic_pcre (check_t *, request_t *, score_t *);
 
-
-check_t *
-check_static_pcre_alloc (void)
-{
-  check_t *check;
-  check_info_static_pcre_t *info;
-
-  if ((check = check_alloc ())) {
-    info = malloc (sizeof (check_info_static_pcre_t));
-
-    if (info) {
-      memset (info, 0, sizeof (check_info_static_pcre_t));
-      check->extra = (void *) info;
-    } else {
-      free (check);
-      check = NULL;
-    }
-  }
-
-  return check;
-}
-
-
-check_t *
-check_dynamic_pcre_alloc (void)
-{
-  check_t *check;
-  check_info_dynamic_pcre_t *info;
-
-  if ((check = check_alloc ())) {
-    info = malloc (sizeof (check_info_dynamic_pcre_t));
-
-    if (info) {
-      memset (info, 0, sizeof (check_info_dynamic_pcre_t));
-      check->extra = (void *) info;
-    } else {
-      free (check);
-      check = NULL;
-    }
-  }
-
-  return check;
-}
-
-
 void
 check_static_pcre_free (check_t *check)
 {
   check_info_static_pcre_t *info;
 
   if (check) {
-    if (check->extra) {
-      info = (check_info_static_pcre_t *) check->extra;
+    if (check->info) {
+      info = (check_info_static_pcre_t *) check->info;
 
       if (info->regex)
         pcre_free (info->regex);
@@ -132,8 +87,8 @@ check_dynamic_pcre_free (check_t *check)
   check_info_dynamic_pcre_t *info;
 
   if (check) {
-    if (check->extra) {
-      info = (check_info_dynamic_pcre_t *) check->extra;
+    if (check->info) {
+      info = (check_info_dynamic_pcre_t *) check->info;
 
       if (info->pattern)
         free (info->pattern);
@@ -185,10 +140,13 @@ check_static_pcre_create (int match, int nomatch, bool nocase, int member,
   int offset;
   int options;
 
-  if (! (check = check_static_pcre_alloc ()))
+
+  check = CHECK_ALLOC (check_info_static_pcre_t);
+
+  if (check == NULL)
     bail ("%s: %s", __func__, strerror (errno));
 
-  info = (check_info_static_pcre_t *) check->extra;
+  info = (check_info_static_pcre_t *) check->info;
 
   if (! (str = check_unescape_pattern (pattern)))
     bail ("%s: check_unescape_pattern: %s", __func__, strerror (errno));
@@ -216,7 +174,9 @@ check_static_pcre_create (int match, int nomatch, bool nocase, int member,
   info->regex = regex;
   info->regex_extra = regex_extra;
 
-  check->extra = info;
+fprintf ("%s: member: %d\n", __func__, member);
+
+//  check->info = info;
   check->check_fn = &check_static_pcre;
   check->free_fn = &check_static_pcre_free;
 
@@ -231,24 +191,21 @@ check_dynamic_pcre_create (int match, int nomatch, bool nocase, int member,
   check_t *check;
   check_info_dynamic_pcre_t *info;
 
-  const char *str;
+  if ((check = CHECK_ALLOC (check_info_dynamic_pcre_t)) == NULL)
+    bail ("%s: CHECK_ALLOC: %s", __func__, strerror (errno));
 
-  str = check_shorten_pattern (pattern);
-
-  if (! (check = check_dynamic_pcre_alloc ()))
-    bail ("%s: check_dynamic_pcre_alloc: %s", __func__, strerror (errno));
-
-  info = (check_info_dynamic_pcre_t *) check->extra;
+  info = (check_info_dynamic_pcre_t *) check->info;
   info->match = match;
   info->nomatch = nomatch;
   info->member = member;
-  info->pattern  = str;
+  if ((info->pattern = strdup (pattern)) == NULL)
+    bail ("%s: strdup: %s", __func__, strerror (errno));
   info->options = PCRE_UTF8;
 
   if (nocase)
     info->options |= PCRE_CASELESS;
 
-  check->extra = (void *) info;
+  check->info = (void *) info;
   check->check_fn = &check_dynamic_pcre;
   check->free_fn = &check_dynamic_pcre_free;
 
@@ -266,8 +223,8 @@ check_static_pcre (check_t *check, request_t *request, score_t *score)
   check_info_static_pcre_t *info;
   int result;
 
-  info = (check_info_static_pcre_t *) check->extra;
-  member = request_member (request, info->member);
+  info = (check_info_static_pcre_t *) check->info;
+  member = request_memberid (request, info->member);
 
   if (! member)
     panic ("%s: no member with id %d", __func__, info->member);
@@ -293,106 +250,91 @@ check_static_pcre (check_t *check, request_t *request, score_t *score)
     score_update (score, info->match);
   }
 
-  return 0;
+  return CHECK_SUCCESS;
 }
 
 
 int
 check_dynamic_pcre (check_t *check, request_t *request, score_t *score)
 {
+  char *buf, *errptr, *mem1, *mem2, *p1, *p2, *p3;
   check_info_dynamic_pcre_t *info;
-
-  char *buf, *mem, *p1, *p2, *p3;
-  int memid;
-  size_t len;
-
-  char *error;
-  int offset;
-  int result;
+  int erroffset, ret;
   pcre *regex;
+  ssize_t len;
 
-  info = (check_info_dynamic_pcre_t *) check->extra;
+  info = (check_info_dynamic_pcre_t *) check->info;
+  mem1 = request_memberid (request, info->member);
 
-  for (len = 1, p1=info->pattern; *p1; p1++) {
-    if (p2) {
-      if (p1[0] == '%') {
-        buf = request_member_id_len (p2, p1 - p2);
-        len += strlen (buf);
-        p2 = NULL;
-      }
+  /* calculate buffer length needed to store pattern */
+  for (len=1, p1=info->pattern; *p1; p1++) {
+    if (p1 == '%' && *(++p1) != '%') {
+      if ((p2 = strchr (p1, '%')) == NULL)
+        return CHECK_ERR_PATTERN;
+
+      mem2 = request_membern (request, p1, (size_t) (p2 - p1));
+
+      if (mem2)
+        len += strlen (mem2);
+
     } else {
-      if (p1[0] == '%') {
-        if (p1[1] == '%') {
-          p1++;
-          len++;
-        } else {
-          p2 = p1+1;
-        }
-      } else {
-        len++;
-      }
+      len++;
     }
   }
 
-  // 1. first things first... decide how long our temporary buffer needs to
-  // be...!
-  // I need this because all strings need to be concatenated before we can
-  // actually compile the regular expression!
+  fprintf (stderr, "required length: %ld\n", len);
 
-  // now that we have the length... allocate the memory!
-  //
-  if (! (buf = malloc (len))) {
-    panic ("%s: malloc: %s", __func__, strerror (errno));
-    return 1;
+  if ((buf = malloc (len)) == NULL) {
+    bail ("%s: malloc: %s", __func__, strerror (errno));
+    return CHECK_ERR_SYSTEM;
   }
 
-  memset (buf, '\0', len);
+  /* create pattern */
+  for (p1=info->pattern, p3=buf; *p1; p1++) {
+    if (*p1 == '%' && *(++p1) != '%') {
+      if ((p2 = strchr (p1, '%')) == NULL) /* unlikely */
+        return CHECK_ERR_PATTERN;
 
-
-  /* copy request member values into pattern */
-  for (p1=info->pattern, p2=NULL, p3=buf; *p1; ) {
-    if (p1[0] == '%') {
-      if (p1[1] == '%') {
-       *p2++ = *p1++;
-      } else {
-        memid = strtol (p1, &p1, 0);
-        mem = request_member (request, memid);
-
-        // XXX: really should take into account . (dot) escaping here
-        for (p3=mem; *p3; *p2++ = *p3++)
+      if ((mem2 = request_membern (request, p1, (size_t) (p2 - p1)))) {
+        for (; *mem2; *p3++ = *mem2++)
           ;
       }
 
-      ++p1;
+      p1 = p2;
+
     } else {
-     *p2++ = *p1++;
+      *p3++ = *p1;
     }
   }
 
-  /* compile pattern into regular expression */
+  *p3 = '\0';
 
-  fprintf (stder, "%s: should match: %s", __func__, buf);
-  regex = pcre_compile (buf, info->options, &error, &offset, NULL);
+  // DEBUG
+  fprintf (stderr, "%s: should match: %s\n", __func__, buf);
+  // /DEBUG
 
-  if (! regex)
+
+  regex = pcre_compile (buf, info->options, &errptr, &erroffset, NULL);
+
+  if (regex == NULL) {
     bail ("%s: pcre_compile: compilation failed at offset %d: %s", __func__,
-          offset, error);
-
-
-  // XXX: we seem to be ok!
-  mem = request_member (request, info->member);
+          erroffset, errptr);
+  }
   
-  result = pcre_exec (regex, NULL, mem, strlen (mem),
-                      0, 0, NULL, 0);
+  ret = pcre_exec (regex, NULL, mem1, strlen (mem1), 0, 0, NULL, 0);
 
   pcre_free (regex);
-  free (mem);
 
-  switch (result) {
+
+  switch (ret) {
     case 0:
+fprintf (stderr, "%s equals %s\n", mem1, buf);
+  free (buf);
       score_update (score, info->match);
       break;
     case PCRE_ERROR_NOMATCH:
+fprintf (stderr, "%s doesn't equal %s\n", mem1, buf);
+  free (buf);
       score_update (score, info->nomatch);
       break;
     //case PCRE_ERROR_NOMEMORY:
@@ -404,31 +346,6 @@ check_dynamic_pcre (check_t *check, request_t *request, score_t *score)
              __func__);
   }
 
-  return 0;
+  return CHECK_SUCCESS;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
