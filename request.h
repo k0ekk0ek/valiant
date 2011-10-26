@@ -1,8 +1,8 @@
-#ifndef _REQUEST_H_INCLUDED_
-#define _REQUEST_H_INCLUDED_
+#ifndef VT_REQUEST_H_INCLUDED
+#define VT_REQUEST_H_INCLUDED
 
-#include <stdlib.h>
-#include <string.h>
+/* system includes */
+#include <sys/types.h>
 
 #define HELO_NAME       (1)
 #define SENDER          (2)
@@ -11,22 +11,22 @@
 #define CLIENT_NAME     (5)
 #define REV_CLIENT_NAME (6)
 
+typedef struct vt_request_struct vt_request_t;
 
-typedef struct request_struct request_t;
-
-struct request_struct {
+struct vt_request_struct {
   char *helo_name;
   char *sender;
-  char *sender_domain;
   char *client_address;
   char *client_name;
   char *reverse_client_name;
 };
 
-request_t *request_from_socket (int);
-void request_free (request_t *);
-char *request_member (request_t *, int);
-int request_member_id (char *);
-int request_member_id_len (char *, size_t);
+vt_request_t *vt_request_read (int);
+void vt_request_free (vt_request_t *);
+int vt_request_attrtoid (char *);
+char *vt_request_attrbyid (vt_request_t *, int);
+char *vt_request_attrbyname (vt_request_t *, char *);
+char *vt_request_attrbynamen (vt_request_t *, char *, size_t);
 
 #endif
+

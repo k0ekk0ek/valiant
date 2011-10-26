@@ -1,80 +1,138 @@
 /* system includes */
+#include <arpa/inet.h>
 #include <errno.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <syslog.h>
 
 /* valiant includes */
 #include "utils.h"
 
+void *
+malloc0 (size_t nbytes)
+{
+  void *ptr;
+
+  if ((ptr = malloc (nbytes)))
+    memset (ptr, 0, nbytes);
+
+  return ptr;
+}
 
 void
-bail (char *fmt, ...)
+vt_log (int prio, const char *fmt, va_list ap)
 {
-  va_list vl;
+  if (prio == LOG_EMERG ||
+      prio == LOG_ALERT ||
+      prio == LOG_CRIT  ||
+      prio == LOG_WARNING)
+  {
+    vfprintf (stderr, fmt, ap);
+    fprintf (stderr, "\n");
+  } else {
+    vfprintf (stdout, fmt, ap);
+    fprintf (stdout, "\n");
+  }
+}
 
-  va_start (vl, fmt);
-  vfprintf (stderr, fmt, vl);
-  va_end (vl);
+void
+vt_panic (const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start (ap, fmt);
+  vt_log (LOG_EMERG, fmt, ap);
+  va_end (ap);
 
   exit (1);
 }
 
-
 void
-panic (char *fmt, ...)
+vt_fatal (const char *fmt, ...)
 {
-  va_list vl;
+  va_list ap;
 
-  va_start (vl, fmt);
-  vfprintf (stderr, fmt, vl);
-  va_end (vl);
+  va_start (ap, fmt);
+  vt_log (LOG_CRIT, fmt, ap);
+  va_end (ap);
 
   exit (1);
 }
 
 void
-error (char *fmt, ...)
+vt_error (const char *fmt, ...)
 {
-  va_list vl;
+  va_list ap;
+  va_start (ap, fmt);
+  vt_log (LOG_ERR, fmt, ap);
+  va_end (ap);
+}
 
-  va_start (vl, fmt);
-  vfprintf (stderr, fmt, vl);
-  va_end (vl);
+void
+vt_warning (const char *fmt, ...)
+{
+  va_list ap;
+  va_start (ap, fmt);
+  vt_log (LOG_WARNING, fmt, ap);
+  va_end (ap);
+}
 
-  return;
+void
+vt_info (const char *fmt, ...)
+{
+  va_list ap;
+  va_start (ap, fmt);
+  vt_log (LOG_INFO, fmt, ap);
+  va_end (ap);
+}
+
+void
+vt_debug (const char *fmt, ...)
+{
+  va_list ap;
+  va_start (ap, fmt);
+  vt_log (LOG_DEBUG, fmt, ap);
+  va_end (ap);
 }
 
 /*
- * readline	- implementation by W. Richard Stevens, 
- * modified to not include line terminator (\n or \r\n)
+ * reverse_inet_addr - reverse ipaddress string for dnsbl query
+ * e.g. 1.2.3.4 -> 4.3.2.1
+ *
+ * based on the reverse inet_addr function from gross
  */
 int
-readline(int fd, void *vptr, size_t maxlen)
+reverse_inet_addr(char *src, char *dst, socklen_t size)
 {
-	ssize_t n, rc;
-	char c, *ptr;
+  unsigned int ipa, ripa;
+  int i, ret;
+  struct in_addr ina;
+  const char *ptr;
 
-	ptr = vptr;
-	for (n = 1; n < maxlen; n++) {
-	      again:
-		if ((rc = read(fd, &c, 1)) == 1) {
-			if (c == '\n')
-				break;	/* we don't want newline */
-			if (!(c == '\r'))	/* we don't need these either */
-				*ptr++ = c;
-		} else if (rc == 0) {
-			if (n == 1)
-				return EMPTY;	/* EOF, no data read */
-			else
-				break;	/* EOF, some data read */
-		} else {
-			if (errno == EINTR)
-				goto again;
-			return ERROR;	/* error, errno set by read() */
-		}
-	}
+  if ((ret = strlen (src)) >= INET_ADDRSTRLEN) {
+    errno = EINVAL;
+    return -1;
+  }
+  if ((ret = inet_pton (AF_INET, src, &ina)) != 1) {
+    if (ret == 0)
+      errno = EINVAL;
+    return -1;
+  }
 
-	*ptr = 0;		/* null terminate like fgets() */
-	return DATA;
+  ipa = ina.s_addr;
+  ripa = 0;
+
+  for (i=0; i < 4; i++) {
+    ripa <<= 8;
+    ripa |= ipa & 0xff;
+    ipa  >>= 8;
+  }
+
+  if (inet_ntop (AF_INET, &ripa, dst, size) == NULL) {
+    return -1;
+  }
+
+  return 0;
 }
-

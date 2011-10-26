@@ -1,27 +1,26 @@
-#ifndef _SCORE_H_INCLUDED_
-#define _SCORE_H_INCLUDED_
+#ifndef VT_SCORE_H_INCLUDED
+#define VT_SCORE_H_INCLUDED
 
 /* system includes */
-#include <glib.h>
+#include <pthread.h>
 
+typedef struct vt_score_struct vt_score_t;
 
-typedef struct score_struct score_t;
-
-struct score_struct {
-  GCond  *done;
-  GMutex *wait;
-  GMutex *update;
-  gint    writers;
-  gint    points;
+struct vt_score_struct {
+  unsigned int writers;
+  int points;
+  pthread_mutex_t lock;
+  pthread_cond_t signal;
 };
 
-score_t *score_new (void);
-void score_free (score_t *);
+vt_score_t *vt_score_create (void);
+int vt_score_destroy (vt_score_t *);
 
-void score_writers_up (score_t *);
-void score_writers_down (score_t *);
+int vt_score_lock (vt_score_t *);
+int vt_score_unlock (vt_score_t *);
 
-gint score_update (score_t *, gint);
-void score_wait (score_t *);
+int vt_score_update (vt_score_t *, int);
+int vt_score_wait (vt_score_t *);
 
 #endif
+

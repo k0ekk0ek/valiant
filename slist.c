@@ -6,24 +6,19 @@
 
 /* valiant includes */
 #include "slist.h"
+#include "utils.h"
 
-
-slist_t *
-slist_alloc (void)
+vt_slist_t *
+vt_slist_alloc (void)
 {
-  slist_t *list;
-
-  if ((list = malloc (sizeof (slist_t))))
-    memset (list, '\0', sizeof (slist_t));
-
-  return list;
+  return (vt_slist_t *)malloc0 (sizeof (vt_slist_t));
 }
 
-slist_t *
-slist_free (slist_t *list, SLIST_FREE_FN free_data, unsigned int num)
+vt_slist_t *
+vt_slist_free (vt_slist_t *list, VT_SLIST_FREE_FUNC free_data, unsigned int num)
 {
   int every;
-  slist_t *cur, *next;
+  vt_slist_t *cur, *next;
 
   if (list) {
     every = num ? 0 : 1;
@@ -42,28 +37,16 @@ slist_free (slist_t *list, SLIST_FREE_FN free_data, unsigned int num)
   return cur;
 }
 
-//slist_t *
-//slist_append (const slist_t *list, void *data)
-//{
-  // IMPLEMENT (less resource intensive)
-//}
-
-//slist_t *
-//slist_prepend (const slist_t *list, void data)
-//{
-  // IMPLEMENT (less resource intensive)
-//}
-
-slist_t *
-slist_insert (const slist_t *list, void *data, int pos)
+vt_slist_t *
+vt_slist_insert (const vt_slist_t *list, void *data, int pos)
 {
   unsigned int i, n;
-  slist_t *prev, *cur, *next;
+  vt_slist_t *prev, *cur, *next;
 
   if (pos < 0) {
     pos *= -1; /* convert negative value into positive value */
-    n = slist_length (list);
-//fprintf (stderr, "%s: %d: %d == %d\n", __func__, __LINE__, pos, n);
+    n = vt_slist_length (list);
+
     if ((unsigned int)pos > n)
       n = 0;
     else
@@ -72,17 +55,16 @@ slist_insert (const slist_t *list, void *data, int pos)
     n  = (unsigned int)pos;
   }
 
-  if ((cur = slist_alloc ()) == NULL)
+  if ((cur = vt_slist_alloc ()) == NULL)
     return NULL;
 
   cur->data = data;
 
   if (list) {
-//fprintf (stderr, "%s: %d, n is %d, string is %s\n", __func__, __LINE__, n, (char*)cur->data);
-    for (prev=NULL, next=(slist_t*)list, i=0;
+    for (prev=NULL, next=(vt_slist_t*)list, i=0;
          next && i < n;
          prev=next, next=next->next, i++)
-      fprintf (stderr, "%d: %s\n", i, (char*) next->data);
+      ;
 
     cur->next = next;
     if (prev)
@@ -93,28 +75,28 @@ slist_insert (const slist_t *list, void *data, int pos)
 }
 
 unsigned int
-slist_length (const slist_t *list)
+vt_slist_length (const vt_slist_t *list)
 {
-  slist_t *cur;
+  vt_slist_t *cur;
   unsigned int i;
 
-  for (cur=(slist_t*)list, i=0; cur; cur=cur->next, i++)
+  for (cur=(vt_slist_t*)list, i=0; cur; cur=cur->next, i++)
     ;
 
   return i;
 }
 
-slist_t *
-slist_sort (const slist_t *list, SLIST_SORT_FN cmp)
+vt_slist_t *
+vt_slist_sort (const vt_slist_t *list, VT_SLIST_SORT_FUNC cmp)
 {
-  slist_t *root;
-  slist_t *prev1, *cur1;
-  slist_t *prev2, *cur2;
-  slist_t *sub_prev, *sub;
+  vt_slist_t *root;
+  vt_slist_t *prev1, *cur1;
+  vt_slist_t *prev2, *cur2;
+  vt_slist_t *sub_prev, *sub;
 
   root = NULL;
 
-  for (prev1=NULL, cur1=(slist_t*)list; cur1; prev1=cur1, cur1=cur1->next) {
+  for (prev1=NULL, cur1=(vt_slist_t*)list; cur1; prev1=cur1, cur1=cur1->next) {
     sub_prev = NULL;
     sub = cur1;
     for (prev2=cur1, cur2=cur1->next; cur2; prev2=cur2, cur2=cur2->next) {

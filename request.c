@@ -1,152 +1,153 @@
 /* system includes */
-
-#include <glib.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 /* prefix includes */
 #include "request.h"
 #include "utils.h"
 
-request_t *
-request_from_socket (gint socket)
-{
-  request_t *request;
 
-  gchar *member;
-  gchar *line;
-  gsize  len;
+#define BUFSIZE (1024)
 
-  if ((request = g_new0 (request_t, 1))) {
-    // do ... while
-    //
-    line = g_malloc0 (1024);
-    // handle errors!
-    //
-    //readline
-    gint bla;
+// vt_request_t *
+// vt_request_read (int fd)
+// {
+  // char buf[BUFSIZE], *attr;
+  // int ret;
+  // vt_request_t *request;
 
-    for (;;) {
-      g_printf ("reading line\n");
-    bla = readline (socket, line, 1024);
-    // handle errors!
-    //gint
+  // if ((request = malloc0 (sizeof (vt_request_t))) == NULL)
+    // return NULL;
 
-    if (bla > 0) {
-      if (! request->helo_name
-       && ! strncmp (line, "helo_name=", 10))
-      {
-        member = request->helo_name = strdup (line+10);
+  // for (;;) {
+    // ret = readline (fd, buf, BUFSIZE);
 
-      } else if (! request->sender 
-              && ! strncmp (line, "sender=", 7))
-      {
-        member = request->sender = strdup (line+7);
+    // if (ret == EMPTY)
+      // break;
+    // if (ret == ERROR) {
+      // request_free (request);
+      // return NULL; /* errno set by readline */
+    // }
 
-      } else if (! request->client_address
-              && ! strncmp (line, "client_address=", 15))
-      {
-        member = request->client_address = strdup (line+15);
+    // if (request->helo_name == NULL && strncmp (buf, "helo_name", 10) == 0)
+      // attr = request->helo_name = strdup (buf+10);
+    // else if (request->sender == NULL && strncmp (buf, "sender=", 7) == 0)
+      // attr = request->sender = strdup (buf+7);
+    // else if (request->client_address == NULL && strncmp (buf, "client_address=", 15) == 0)
+      // attr = request->client_address = strdup (buf+15);
+    // else if (request->client_name == NULL && strncmp (buf, "client_name=", 12) == 0)
+      // attr = request->client_name = strdup (buf+12);
+    // else if (request->reverse_client_name == NULL && strncmp (buf, "reverse_client_name", 19) == 0)
+      // attr = request->reverse_client_name = strdup (buf+19);
+    // else if (strlen (buf) == 0)
+      // break; /* our work here is done */
+    // else
+      // continue; /* skip unwanted attributes */
 
-      } else if (! request->client_name
-              && ! strncmp (line, "client_name=", 12))
-      {
-        member = request->client_name = strdup (line+12);
+    // if (! attr) {
+      // vt_request_free (request);
+      // return NULL; /* errno set by strdup */
+    // }
+  // }
 
-      } else if (! request->reverse_client_name
-              && ! strncmp (line, "reverse_client_name", 19))
-      {
-        member = request->reverse_client_name = strdup (line+19);
-      } else if (strlen (line) == 0) {
-        g_printf ("empty line... breaking\n");
-        break;
-      } else {
-        continue; //skip unwanted attributes
-      }
+  // // FIXME: validate request attributes
 
-      if (! member) {
-        g_warning ("%s: %s", __func__, strerror (errno));
-        // actually this is not acceptable... it could cause a memory leak!
-        return NULL;
-      }
-    } else if (bla == 0) { // empty
-      break;
-    }
-    }
+  // return request;
+// }
 
-
-  } else {
-    g_warning ("%s: some error", __func__);
-  }
-
-  return request;
-}
-
+#undef BUFSIZE
 
 void
-request_free (request_t *request)
+vt_request_free (vt_request_t *request)
 {
-  //if (request)
-  //  free (request);
-  // XXX: this of course won't do!
+  if (request) {
+    if (request->helo_name)
+      free (request->helo_name);
+    if (request->sender)
+      free (request->sender);
+    if (request->client_address)
+      free (request->client_address);
+    if (request->client_name)
+      free (request->client_name);
+    if (request->reverse_client_name)
+      free (request->reverse_client_name);
+    free (request);
+  }
 
   return;
 }
 
-
-char *
-request_member (request_t *request, int id)
-{
-  char *member = NULL;
-
-  switch (id) {
-    case HELO_NAME:
-      member = request->helo_name;
-      break;
-    case SENDER:
-      member = request->sender;
-      break;
-    case SENDER_DOMAIN:
-      member = request->sender_domain;
-      break;
-    case CLIENT_ADDRESS:
-      member = request->client_address;
-      break;
-    case CLIENT_NAME:
-      member = request->client_name;
-      break;
-    case REV_CLIENT_NAME:
-      member = request->reverse_client_name;
-      break;
-  }
-
-  return member;
-}
-
-
 int
-request_member_id (char *str)
+vt_request_attrtoid (char *str)
 {
-  return request_member_id_len (str, strlen (str));
-}
-
-
-int
-request_member_id_len (char *str, size_t len)
-{
-  if (len == 9  && ! strncmp ("helo_name", str, len))
+  if (strncasecmp (str, "helo_name", 9) == 0)
     return HELO_NAME;
-  if (len == 6  && ! strncmp ("sender", str, len))
+  if (strncasecmp (str, "sender", 6) == 0)
     return SENDER;
-  if (len == 13 && ! strncmp ("sender_domain", str, len))
+  if (strncasecmp (str, "sender_domain", 13) == 0)
     return SENDER_DOMAIN;
-  if (len == 14 && ! strncmp ("client_address", str, len))
+  if (strncasecmp (str, "client_address", 14) == 0)
     return CLIENT_ADDRESS;
-  if (len == 11 && ! strncmp ("client_name", str, len))
+  if (strncasecmp (str, "client_name", 11) == 0)
     return CLIENT_NAME;
-  if (len == 19 && ! strncmp ("reverse_client_name", str, len))
+  if (strncasecmp (str, "reverse_client_name", 19) == 0)
     return REV_CLIENT_NAME;
 
   return -1;
 }
+
+char *
+vt_request_attrbyid (vt_request_t *request, int id)
+{
+  switch (id) {
+    case HELO_NAME:
+      return request->helo_name;
+    case SENDER:
+      return request->sender;
+    case CLIENT_ADDRESS:
+      return request->client_address;
+    case CLIENT_NAME:
+      return request->client_name;
+    case REV_CLIENT_NAME:
+      return request->reverse_client_name;
+  }
+
+  return NULL;
+}
+
+char *
+vt_request_attrbyname (vt_request_t *request, char *str)
+{
+  if (strncasecmp (str, "helo_name", 9) == 0)
+    return request->helo_name;
+  if (strncasecmp (str, "sender", 6) == 0)
+    return request->sender;
+  if (strncasecmp (str, "client_address", 14) == 0)
+    return request->client_address;
+  if (strncasecmp (str, "client_name", 11) == 0)
+    return request->client_name;
+  if (strncasecmp (str, "reverse_client_name", 19) == 0)
+    return request->reverse_client_name;
+
+  return NULL;
+}
+
+char *
+vt_request_attrbynamen (vt_request_t *request, char *str, size_t len)
+{
+  if (len == 9  && ! strncmp ("helo_name", str, len))
+    return request->helo_name;
+  if (len == 6  && ! strncmp ("sender", str, len))
+    return request->sender;
+  if (len == 14 && ! strncmp ("client_address", str, len))
+    return request->client_address;
+  if (len == 11 && ! strncmp ("client_name", str, len))
+    return request->client_name;
+  if (len == 19 && ! strncmp ("reverse_client_name", str, len))
+    return request->reverse_client_name;
+
+  return NULL;
+}
+
