@@ -38,7 +38,11 @@ int vt_dynamic_str_check (vt_check_t *, vt_request_t *, vt_score_t *,
 int vt_dynamic_str_check_nocase (vt_check_t *, vt_request_t *, vt_score_t *,
   vt_stats_t *);
 
+/* NOTE: specifying the include/exclude options here is kind of ugly, but this
+   way it does fit into my model without me having to modify a lot of code. */
 cfg_opt_t vt_str_check_opts[] = {
+  CFG_STR_LIST ("include", 0, CFGF_NODEFAULT),
+  CFG_STR_LIST ("exclude", 0, CFGF_NODEFAULT),
   CFG_STR ("attribute", 0, CFGF_NODEFAULT),
   CFG_STR ("pattern", 0, CFGF_NODEFAULT),
   CFG_BOOL ("negate", cfg_false, CFGF_NONE),

@@ -14,6 +14,7 @@
 #include "check_str.h"
 #include "check_pcre.h"
 #include "constants.h"
+#include "map_bdb.h"
 #include "request.h"
 #include "score.h"
 #include "slist.h"
@@ -36,7 +37,7 @@ vt_cfg_opt_walk_count (void *arg, cfg_opt_t *opt) {
 }
 
 void
-vt_cfg_opt_walk (VT_CFG_OPT_WALK_FUNC func, void *arg, vt_type_t *types[], size_t offset)
+vt_cfg_opt_walk (VT_CFG_OPT_WALK_FUNC func, void *arg, void *types[], size_t offset)
 {
   int i, j, skip;
   cfg_opt_t *p, *q;
@@ -65,7 +66,7 @@ vt_cfg_opt_walk (VT_CFG_OPT_WALK_FUNC func, void *arg, vt_type_t *types[], size_
 #define vt_cfg_opts_merge(a,b,c) (vt_cfg_opts_merge_offset ((a), (b), offsetof (vt_type_t, c)))
 
 int
-vt_cfg_opts_merge_offset (cfg_opt_t **opts, vt_type_t *types[], size_t offset)
+vt_cfg_opts_merge_offset (cfg_opt_t **opts, void *types[], size_t offset)
 {
   cfg_opt_t *root, *cur;
   cfg_opt_t end[] = { CFG_END () };
@@ -79,6 +80,35 @@ vt_cfg_opts_merge_offset (cfg_opt_t **opts, vt_type_t *types[], size_t offset)
   vt_cfg_opt_walk (&vt_cfg_opt_walk_copy, (void *)&cur, types, offset);
   memcpy (root+num, end, sizeof (cfg_opt_t));
   *opts = root;
+  return VT_SUCCESS;
+}
+
+int
+vt_maps_init (vt_set_t *set, vt_map_type_t *types[], const cfg_t *cfg)
+{
+  // IMPLEMENT
+  // aka... populate the vt_set_t structure!
+  cfg_t *sec;
+  char *type;
+  int i, j, n, done, ret, id;
+  vt_map_t *map;
+
+  for (i=0, n=cfg_size ((cfg_t *)cfg; i < n; i++) {
+    if ((sec = cfg_getnsec ((cfg_t *)cfg, "map", i)) &&
+        (type = cfg_getstr ((cfg_t *)cfg, "type")))
+    {
+      for (j=0, done=0; ! done && types[j]; j++) {
+        if (strcmp (type, types[j]->name)) {
+          done = 1;
+          if ((ret = types[j]->create_map_func (&map, sec)) != VT_SUCCESS)
+            return ret; // FIXME: should destroy set?!?!
+          if ((ret = vt_set_insert_map (&id, set, map)) != VT_SUCCESS)
+            return ret;
+        }
+      }
+    }
+  }
+
   return VT_SUCCESS;
 }
 
@@ -118,7 +148,10 @@ vt_types_init (vt_type_t *types[], const cfg_t *cfg)
 
 // FIXME: cleanup memory on failure!
 int
-vt_checks_init (vt_slist_t **dest, const vt_type_t *types[], const cfg_t *cfg)
+vt_checks_init (vt_slist_t **dest,
+                const vt_type_t *types[],
+                const vt_set_t *set,
+                const cfg_t *cfg)
 {
   cfg_t *sec;
   char *type, *title;
@@ -148,6 +181,8 @@ vt_checks_init (vt_slist_t **dest, const vt_type_t *types[], const cfg_t *cfg)
         /* create_check_func reports errors itself */
         return VT_ERR_INVAL;
       }
+
+      /* populate the include/exclude maps */
 
       if ((next = vt_slist_append (root, check)) == NULL) {
         vt_error ("%s: slist_append: %s", __func__, strerror (errno));
@@ -188,6 +223,7 @@ main (int argc, char *argv[])
   int n = 2;
 
   vt_type_t *types[5];
+  vt_map_type_t *map_types[2];
   cfg_opt_t *type_opts, *type_opt;
   cfg_opt_t *check_opts, *check_opt;
 
@@ -197,12 +233,17 @@ main (int argc, char *argv[])
   types[3] = vt_pcre_type ();
   types[4] = NULL;
 
-  vt_cfg_opts_merge (&type_opts, types, type_opts);
-  vt_cfg_opts_merge (&check_opts, types, check_opts);
+  map_types[0] = vt_map_bdb_type ();
+  map_types[1] = NULL;
+
+  vt_cfg_opts_merge (&type_opts, types, offsetof (vt_type_t, type_opts));
+  vt_cfg_opts_merge (&check_opts, types, offsetof (vt_type_t, check_opts));
+  vt_cfg_opts_merge (&map_opts, map_types, offsetof (vt_map_type_t, opts));
 
   cfg_opt_t opts[] = {
     CFG_SEC ("type", type_opts, CFGF_MULTI | CFGF_TITLE),
     CFG_SEC ("check", check_opts, CFGF_MULTI | CFGF_TITLE),
+    CFG_SEC ("map", map_opts, CFGF_MULTI | CFGF_TITLE),
     CFG_END ()
   };
 
@@ -211,6 +252,13 @@ main (int argc, char *argv[])
   cfg_t *cfg = cfg_init (opts, CFGF_NONE);
   cfg_parse (cfg, argv[1]);
 
+  // create a nice new set...
+  vt_set_t *set;
+  if (vt_set_create (&set) != VT_SUCCESS)
+    return EXIT_FAILURE;
+
+  if (vt_maps_init (set, map_types, cfg))
+    vt_panic ("%s: cannot initialize include/exclude maps", __func__);
   if (vt_types_init (types, cfg) != 0)
     vt_panic ("%s: configuration error", __func__);
   if (vt_checks_init (&root, (const vt_type_t**)types, cfg))
@@ -227,4 +275,3 @@ main (int argc, char *argv[])
   printf ("done, weight is %d, bye\n", score->points);
   return 0;
 }
-

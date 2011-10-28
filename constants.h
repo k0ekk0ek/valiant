@@ -9,5 +9,6 @@
 #define VT_ERR_INVAL (2)
 #define VT_ERR_SYSTEM (3)
 #define VT_ERR_QFULL (4)
+#define VT_ERR_MAP (5)
 
 #endif

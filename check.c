@@ -1,4 +1,5 @@
 /* system includes */
+#include <confuse.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
