@@ -44,6 +44,7 @@ struct vt_rbl_struct {
 };
 
 int vt_rbl_create (vt_rbl_t **, const cfg_t *sec);
+void vt_rbl_destroy (vt_rbl_t *);
 int vt_rbl_check (vt_check_t *, vt_request_t *, vt_score_t *, vt_stats_t *,
   vt_thread_pool_t *);
 void vt_rbl_worker (const vt_rbl_param_t *, const SPF_server_t *, const char *);

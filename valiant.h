@@ -10,5 +10,8 @@
 #define VT_ERR_SYSTEM (3)
 #define VT_ERR_QFULL (4)
 #define VT_ERR_MAP (5)
+#define VT_ERR_ALREADY (6)
+#define VT_ERR_BADCFG (7)
+#define VT_ERR_BADMBR (8)
 
 #endif

@@ -42,39 +42,13 @@ struct vt_rbl_weight_struct {
   int weight;
 };
 
-/* parameters used in "type dnsbl { }" */
-const cfg_opt_t vt_rbl_type_opts[] = {
-  CFG_INT ("max_idle_threads", 10, CFGF_NONE),
-  CFG_INT ("max_tasks", 200, CFGF_NONE),
-  CFG_INT ("max_threads", 100, CFGF_NONE),
-  CFG_INT ("min_threads", 10, CFGF_NONE),
-  CFG_END ()
-};
-
-/* parameters used in "in <subnet> { }" */
-const cfg_opt_t vt_rbl_check_in_opts[] = {
-	CFG_FLOAT ("weight", 1.0, CFGF_NONE),
-	CFG_END ()
-};
-
-/* parameters used in "check <name> { }" */
-const cfg_opt_t vt_rbl_check_opts[] = {
-  CFG_SEC ("in", (cfg_opt_t *) vt_rbl_check_in_opts, CFGF_MULTI | CFGF_TITLE),
-	CFG_STR ("type", 0, CFGF_NODEFAULT),
-  CFG_STR ("zone", 0, CFGF_NODEFAULT),
-  CFG_FLOAT ("weight", 1.0, CFGF_NONE),
-  CFG_BOOL ("ipv4", cfg_true, CFGF_NONE),
-  CFG_BOOL ("ipv6", cfg_false, CFGF_NONE),
-  CFG_END ()
-};
-
 /* prototypes */
-void vt_rbl_destroy (vt_rbl_t *);
 int vt_rbl_skip (int *, vt_rbl_t *);
 int vt_rbl_error (vt_rbl_t *);
 vt_rbl_weight_t *vt_rbl_weight_create (const char *, float );
 int vt_rbl_weight_destroy (void *);
 int vt_rbl_weight_sort (void *, void *);
+int vt_rbl_weight (vt_rbl_t *, int);
 
 /* defines */
 #define TIME_FRAME (60)
@@ -463,4 +437,20 @@ vt_rbl_weight_sort (void *p1, void *p2)
     return  1;
 
   return 0;
+}
+
+int
+vt_rbl_weight (vt_rbl_t *rbl, int maximum)
+{
+  int weight = 0;
+  vt_slist_t *p;
+  vt_rbl_weight_t *q;
+
+  for (p=rbl->weights; p; p=p->next) {
+    q = (vt_rbl_weight_t *)p->data;
+    if ((maximum && q->weight > weight) || (!maximum && q->weight < weight))
+      weight = q->weight;
+  }
+
+  return weight;
 }

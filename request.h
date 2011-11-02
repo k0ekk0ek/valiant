@@ -4,29 +4,35 @@
 /* system includes */
 #include <sys/types.h>
 
-#define HELO_NAME       (1)
-#define SENDER          (2)
-#define SENDER_DOMAIN   (3)
-#define CLIENT_ADDRESS  (4)
-#define CLIENT_NAME     (5)
-#define REV_CLIENT_NAME (6)
+typedef enum vt_request_mbr_enum vt_request_mbr_t;
+
+enum vt_request_mbr_enum {
+  HELO_NAME,
+  SENDER,
+  SENDER_DOMAIN,
+  RECIPIENT,
+  RECIPIENT_DOMAIN,
+  CLIENT_ADDRESS,
+  CLIENT_NAME,
+  REV_CLIENT_NAME
+};
 
 typedef struct vt_request_struct vt_request_t;
 
 struct vt_request_struct {
   char *helo_name;
   char *sender;
+  char *sender_domain; /* pointer to first char after @ in sender */
+  char *recipient;
+  char *recipient_domain; /* pointer to first char after @ in recipient */
   char *client_address;
   char *client_name;
   char *reverse_client_name;
 };
 
-vt_request_t *vt_request_read (int);
-void vt_request_free (vt_request_t *);
-int vt_request_attrtoid (char *);
-char *vt_request_attrbyid (vt_request_t *, int);
-char *vt_request_attrbyname (vt_request_t *, char *);
-char *vt_request_attrbynamen (vt_request_t *, char *, size_t);
+int vt_request_mbrtoid (vt_request_mbr_t *, const char *);
+int vt_request_mbrbyid (char **, vt_request_t *, vt_request_mbr_t *);
+int vt_request_mbrbyname (char **, vt_request_t *, char *);
+int vt_request_mbrbynamen (char **, vt_request_t *, char *, size_t);
 
 #endif
-

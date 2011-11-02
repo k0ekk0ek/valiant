@@ -1,24 +1,30 @@
-v 1.  Remove all GLIB code from sources.
-v 1a. Rename score_writers_* to score_(un)lock
-  2.  Remove the nomatch option from checks? See below.
-  3.  Rename the match option to weight.
-  3a. Document code.
-v 4.  Remove member to member id transformation from str and pcre checks.
-  5.  Tidy and refactor parts of check_str.c.
-  6.  Add comments to check_str.c.
-v 7.  Tidy, refactor and finish check_pcre.c.
-v 8.  Remove check_*_alloc from sources and replace by CHECK_ALLOC.
-v 9.  Make DNSBL checks work.
-  10. Implement RHSBL checks.
-  11. Implement DNSWL checks.
-  12. Implement IPv6 support for DNSBL checks.
-v 13. Implement bitmask support for DNSBL checks.
-  14. Implement escaping of special characters in hostnames etc in PCRE checks.
-  15. Tidy the implementation of check_dnsbl.c
-  16. Reevaluate thread pool implementation, especially the mutex/condition
-      handling part.
-
-11.
-I can't think of why I implemented the nomatch option, does it do anything
-usefull? I might have used it to be able to negate checks, but a negate option
-would be more logical?
+v 1.  Remove cfg_opt_t arrays from vt_type_t and vt_map_type_t structures.
+v 2.  Rename vt_<check>_t to vt_check_<check>_t.
+v 3.  Rename vt_type_t to vt_check_type_t.
+v 4.  Implement staging.
+v 5.  Remove type.h and move it's contents to check.h.
+v 6.  Rename "attribute" to member in check configuration section.
+v 7.  Rename member "context" in vt_map_type_t and member "info" in vt_type_t
+      to data.
+  8.  Move some of the configuration validation to libconfuse. See:
+      http://www.nongnu.org/confuse/manual/ftpconf_8c-example.html
+v 9.  Move some of the check creation to check_alloc and rename it to
+      check_create.
+v 10. Move map list creation to a seperate function.
+  11. Make vt_stage_create also do map list creation.
+v 12. Make vt_check_*_create also do map list creation.
+v 13. Rename vt_set_select_map_id to vt_set_get_map_id.
+v 14. Rename vt_set_insert_map to vt_set_set_map.
+v 15. Consolidate set.x en map.x and rename certain functions.
+v 16. Rename vt_set_t to something else, the name is confusing.
+      >> maybe choose vt_map_list_t?
+v 17. Create enum for map results. >> Think of good names for the result, look
+      at Postfix and other policy servers for ideas.
+v 18. Create enum for request members.
+v 19. Rename constants.h to valiant.h.
+  20. Create check variant (check_map) that does a map lookup and increments
+      the score with the specified value.
+  21. Finnish implementation of stages.
+  X.  Implement vt_map_pgsql_t.
+  X.  Document code.
+  X.  Implement IPv6 support for DNSBL checks.

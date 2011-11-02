@@ -18,37 +18,31 @@ vt_thread_pool_t *dnsbl_thread_pool = NULL;
 pthread_mutex_t dnsbl_thread_pool_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* prototypes */
-int vt_dnsbl_init (const cfg_t *);
-int vt_dnsbl_deinit (void);
-int vt_dnsbl_destroy (vt_check_t *);
-int vt_dnsbl_check (vt_check_t *, vt_request_t *, vt_score_t *, vt_stats_t *);
-void vt_dnsbl_worker (void *);
+int vt_check_dnsbl_init (const cfg_t *);
+int vt_check_dnsbl_deinit (void);
+int vt_check_dnsbl_create (vt_check_t **, const vt_map_list_t *, const cfg_t *);
+void vt_check_dnsbl_destroy (vt_check_t *);
+int vt_check_dnsbl_check (vt_check_t *, vt_request_t *, vt_score_t *,
+  vt_stats_t *);
+void vt_check_dnsbl_worker (void *);
+int vt_check_dnsbl_weight (vt_check_t *, int);
 
-vt_type_t *
-vt_dnsbl_type (void)
+const vt_check_type_t vt_check_type_dnsbl = {
+  .name = "dnsbl",
+  .flags = VT_CHECK_TYPE_FLAG_NEED_INIT,
+  .init_func = &vt_check_dnsbl_init,
+  .deinit_func = &vt_check_dnsbl_deinit,
+  .create_check_func = &vt_check_dnsbl_create
+};
+
+vt_check_type_t *
+vt_check_dnsbl_type (void)
 {
-  vt_type_t *type;
-
-  if ((type = malloc (sizeof (vt_type_t))) == NULL) {
-    vt_error ("%s: malloc: %s", __func__, __LINE__, strerror (errno));
-    return NULL;
-  }
-
-  memset (type, 0, sizeof (vt_type_t));
-
-  type->name = "dnsbl";
-  type->flags = VT_TYPE_FLAG_NEED_INIT;
-  type->type_opts = vt_rbl_type_opts;
-  type->check_opts = vt_rbl_check_opts;
-  type->init_func = &vt_dnsbl_init;
-  type->deinit_func = &vt_dnsbl_deinit;
-  type->create_check_func = &vt_dnsbl_create;
-
-  return type;
+  return &vt_check_type_dnsbl;
 }
 
 int
-vt_dnsbl_init (const cfg_t *sec)
+vt_check_dnsbl_init (const cfg_t *sec)
 {
 	int ret;
 	int max_threads, max_idle_threads, max_tasks;
@@ -86,7 +80,7 @@ vt_dnsbl_init (const cfg_t *sec)
 }
 
 int
-vt_dnsbl_deinit (void)
+vt_check_dnsbl_deinit (void)
 {
   int ret;
 
@@ -113,51 +107,55 @@ vt_dnsbl_deinit (void)
 }
 
 int
-vt_dnsbl_create (vt_check_t **dest, const cfg_t *sec)
+vt_check_dnsbl_create (vt_check_t **dest, const vt_map_list_t *list,
+  const cfg_t *sec)
 {
   char *title;
-  int ret;
-  vt_check_t *check;
-  vt_rbl_t *rbl;
+  int ret, err;
+  vt_check_t *check = NULL;
+  vt_rbl_t *rbl = NULL;
 
-  if ((title = (char *)cfg_title ((cfg_t *)sec)) == NULL) {
-    vt_error ("%s: title for check section missing", __func__);
-    return VT_ERR_INVAL;
+  if ((ret = vt_check_create (&check, 0, list, sec)) != VT_SUCCESS ||
+      (ret = vt_rbl_create (&rbl, sec)) != VT_SUCCESS)
+  {
+    err = ret;
+    goto FAILURE;
   }
 
-  if ((check = vt_check_alloc (0, title)) == NULL)
-    return VT_ERR_NOMEM;
-  if ((ret = vt_rbl_create (&rbl, sec)) != VT_SUCCESS)
-    return ret;
-
   check->prio = 5;
-  check->info = (void *)rbl;
-  check->check_func = &vt_dnsbl_check;
-  check->destroy_func = &vt_dnsbl_destroy;
+  check->data = (void *)rbl;
+  check->check_func = &vt_check_dnsbl_check;
+  check->weight_func = &vt_check_dnsbl_weight;
+  check->destroy_func = &vt_check_dnsbl_destroy;
 
   *dest = check;
-
   return VT_SUCCESS;
+FAILURE:
+  vt_check_dnsbl_destroy (check);
+  return err;
 }
 
-int
-vt_dnsbl_destroy (vt_check_t *check)
+void
+vt_check_dnsbl_destroy (vt_check_t *check)
 {
-  // IMPLEMENT
-  return VT_SUCCESS;
+  if (check) {
+    if (check->data)
+      vt_rbl_destroy ((vt_rbl_t *)rbl);
+    vt_check_destroy (rbl);
+  }
 }
 
 int
-vt_dnsbl_check (vt_check_t *check,
-                vt_request_t *request,
-                vt_score_t *score,
-                vt_stats_t *stats)
+vt_check_dnsbl_check (vt_check_t *check,
+                      vt_request_t *request,
+                      vt_score_t *score,
+                      vt_stats_t *stats)
 {
   return vt_rbl_check (check, request, score, stats, dnsbl_thread_pool);
 }
 
 void
-vt_dnsbl_worker (void *param)
+vt_check_dnsbl_worker (void *arg)
 {
   char query[HOST_NAME_MAX], reverse[INET_ADDRSTRLEN];
   vt_check_t *check;
@@ -165,10 +163,10 @@ vt_dnsbl_worker (void *param)
   vt_request_t *request;
   vt_score_t *score;
 
-  check = ((vt_rbl_param_t *)param)->check;
-  rbl = (vt_rbl_t *)check->info;
-  request = ((vt_rbl_param_t *)param)->request;
-  score = ((vt_rbl_param_t *)param)->score;
+  check = ((vt_rbl_param_t *)arg)->check;
+  rbl = (vt_rbl_t *)check->data;
+  request = ((vt_rbl_param_t *)arg)->request;
+  score = ((vt_rbl_param_t *)arg)->score;
 
   if (request->client_address) {
     if (reverse_inet_addr (request->client_address, reverse, INET_ADDRSTRLEN) < 0)
@@ -176,65 +174,14 @@ vt_dnsbl_worker (void *param)
     if (snprintf (query, HOST_NAME_MAX, "%s.%s", reverse, rbl->zone) >= HOST_NAME_MAX)
       vt_panic ("%s: dnsbl query exceeded maximum hostname length", __func__);
 
-    vt_rbl_worker ((vt_rbl_param_t *)param, dnsbl_spf_server, query);
+    vt_rbl_worker ((vt_rbl_param_t *)arg, dnsbl_spf_server, query);
   }
 
   vt_score_unlock (score);
-
-  return;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+int
+vt_check_dnsbl_weight (vt_check_t *check, int maximum)
+{
+  return vt_rbl_weight ((vt_rbl_t *)check->data, maximum);
+}

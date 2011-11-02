@@ -5,31 +5,57 @@
 #include <string.h>
 
 /* valiant includes */
+#include "valiant.h"
 #include "check.h"
+#include "set.h"
 #include "utils.h"
 
-vt_check_t *
-vt_check_alloc (size_t n, const char *s)
+int
+vt_check_create (vt_check_t **dest, size_t size, const vt_map_list_t *list,
+  const cfg_t *sec)
 {
-  vt_check_t *check;
+  char *title;
+  int ret, err;
+  vt_check_t *check = NULL;
+  vt_map_id_t *maps = NULL;
 
-  if ((check = malloc0 (sizeof (vt_check_t))) == NULL)
-    return NULL;
+  if ((title = cfg_title ((cfg_t *)sec)) == NULL) {
+    vt_error ("%s: check title unavailable", __func__);
+    err = VT_ERR_BADCFG;
+    goto FAILURE;
+  }
+  if ((check = malloc0 (sizeof (vt_check_t))) == NULL ||
+      (size && (check->data = malloc0 (size)) == NULL))
+  {
+    vt_error ("%s: malloc0: %s", __func__, strerror (errno));
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
+  }
+  if ((check->name = strdup (title)) == NULL) {
+    vt_error ("%s: strdup: %s", __func__, strerror (errno));
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
+  }
+  if ((ret = vt_map_ids_create (&maps, list, sec)) != VT_SUCCESS) {
+    err = ret;
+    goto FAILURE;
+  }
 
-  if ((check->name = strdup (s)) == NULL) {
+  *dest = check;
+  return VT_SUCCESS;
+FAILURE:
+  vt_check_destroy (check);
+  return err;
+}
+
+void
+vt_check_destroy (vt_check_t *check)
+{
+  if (check) {
+    if (check->data)
+      free (check->data);
     free (check);
-    return NULL;
   }
-
-  if (n > 0) {
-    if ((check->info = malloc0 (n)) == NULL) {
-      free (check->name);
-      free (check);
-      return NULL;
-    }
-  }
-
-  return check;
 }
 
 int

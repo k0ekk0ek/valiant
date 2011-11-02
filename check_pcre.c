@@ -7,25 +7,25 @@
 #include <string.h>
 
 /* valiant includes */
-#include "check.h"
 #include "check_pcre.h"
-#include "constants.h"
+#include "map.h"
 #include "utils.h"
+#include "valiant.h"
 
-typedef struct vt_static_pcre_struct vt_static_pcre_t;
+typedef struct vt_check_static_pcre_struct vt_check_static_pcre_t;
 
-struct vt_static_pcre_struct {
-  int attrib;
+struct vt_check_static_pcre_struct {
+  vt_request_mbr_t member;
   pcre *regex;
   pcre_extra *regex_extra;
   int negate;
   int weight;
 };
 
-typedef struct vt_dynamic_pcre_struct vt_dynamic_pcre_t;
+typedef struct vt_check_dynamic_pcre_struct vt_check_dynamic_pcre_t;
 
-struct vt_dynamic_pcre_struct {
-  int attrib;
+struct vt_check_dynamic_pcre_struct {
+  vt_request_mbr_t member;
   char *pattern;
   int options;
   int negate;
@@ -34,109 +34,79 @@ struct vt_dynamic_pcre_struct {
 
 
 /* prototypes */
-int vt_static_pcre_create (vt_check_t **dest, const cfg_t *);
-int vt_dynamic_pcre_create (vt_check_t **dest, const cfg_t *);
-int vt_static_pcre_destroy (vt_check_t *);
-int vt_dynamic_pcre_destroy (vt_check_t *);
-int vt_static_pcre_check (vt_check_t *, vt_request_t *, vt_score_t *,
+int vt_check_static_pcre_create (vt_check_t **dest, const cfg_t *);
+int vt_check_dynamic_pcre_create (vt_check_t **dest, const cfg_t *);
+int vt_check_static_pcre_destroy (vt_check_t *);
+int vt_check_dynamic_pcre_destroy (vt_check_t *);
+int vt_check_static_pcre_check (vt_check_t *, vt_request_t *, vt_score_t *,
   vt_stats_t *);
-size_t vt_dynamic_pcre_escaped_len (const char *);
-ssize_t vt_dynamic_pcre_escape (char *, size_t, const char *);
-int vt_dynamic_pcre_check (vt_check_t *, vt_request_t *, vt_score_t *,
+size_t vt_check_dynamic_pcre_escaped_len (const char *);
+ssize_t vt_check_dynamic_pcre_escape (char *, size_t, const char *);
+int vt_check_dynamic_pcre_check (vt_check_t *, vt_request_t *, vt_score_t *,
   vt_stats_t *);
+int vt_check_static_pcre_weight (vt_check_t *, int);
+int vt_check_dynamic_pcre_weight (vt_check_t *, int);
 
-cfg_opt_t vt_pcre_check_opts[] = {
-  CFG_STR ("attribute", 0, CFGF_NODEFAULT),
-  CFG_STR ("pattern", 0, CFGF_NODEFAULT),
-  CFG_BOOL ("negate", cfg_false, CFGF_NONE),
-  CFG_BOOL ("nocase", cfg_false, CFGF_NONE),
-  CFG_FLOAT ("weight", 1.0, CFGF_NONE),
-  CFG_END ()
+const vt_check_type_pcre = {
+  .name = "pcre",
+  .flags = VT_CHECK_TYPE_FLAG_NONE,
+  .init_func = NULL,
+  .deinit_func = NULL,
+  .create_check_func = &vt_pcre_create
 };
 
-vt_type_t *
-vt_pcre_type (void)
+vt_check_type_t *
+vt_check_pcre_type (void)
 {
-  vt_type_t *type;
-
-  if ((type = malloc (sizeof (vt_type_t))) == NULL) {
-    vt_error ("%s: malloc: %s", __func__, __LINE__, strerror (errno));
-    return NULL;
-  }
-
-  memset (type, 0, sizeof (vt_type_t));
-
-  type->name = "pcre";
-  type->flags = VT_TYPE_FLAG_NONE;
-  type->type_opts = NULL;
-  type->check_opts = vt_pcre_check_opts;
-  type->init_func = NULL;
-  type->deinit_func = NULL;
-  type->create_check_func = &vt_pcre_create;
-
-  return type;
+  return &vt_check_type_pcre;
 }
 
 int
-vt_pcre_create (vt_check_t **dest, const cfg_t *sec)
+vt_check_pcre_create (vt_check_t **dest, const vt_map_list_t *list,
+  const cfg_t *sec)
 {
-  char *value;
+  char *ptrn, *title;
 
-  if ((value = cfg_getstr ((cfg_t *)sec, "pattern")) == NULL) {
-    vt_error ("%s: pattern mandatory", __func__);
-    return VT_ERR_INVAL;
+  if ((title = (char *)cfg_title ((cfg_t *)sec)) == NULL) {
+    vt_error ("%s: check title unavailable", __func__);
+    return VT_ERR_BADCFG;
+  }
+  if ((ptrn = cfg_getstr ((cfg_t *)sec, "pattern")) == NULL) {
+    vt_error ("%s: pattern unavailable for check %s", __func__, title);
+    return VT_ERR_BADCFG;
   }
 
   if (vt_check_dynamic_pattern (value))
-    return vt_dynamic_pcre_create (dest, sec);
+    return vt_check_dynamic_pcre_create (dest, list, sec);
 
-  return vt_static_pcre_create (dest, sec);
+  return vt_check_static_pcre_create (dest, list, sec);
 }
 
 int
-vt_static_pcre_create (vt_check_t **dest, const cfg_t *sec)
+vt_check_static_pcre_create (vt_check_t **dest, const vt_map_list_t *list,
+  const cfg_t *sec)
 {
-  char *value, *pattern, *errptr;
-  vt_check_t *check;
-  vt_static_pcre_t *info;
-  int erroffset, options;
+  char *ptrn1, *ptrn2, *errptr;
+  int erroffset, options, ret, err;
+  vt_check_t *check = NULL;
+  vt_check_static_pcre_t *data;
 
-  if ((value = (char *)cfg_title ((cfg_t *)sec)) == NULL) {
-    vt_error ("%s: title for check section missing", __func__);
-    return VT_ERR_INVAL;
-  }
-  if ((check = vt_check_alloc (sizeof (vt_static_pcre_t), value)) == NULL) {
-    vt_error ("%s: vt_check_alloc: %s", __func__, strerror (errno));
-    return VT_ERR_NOMEM;
+  ret = vt_check_create (&check, sizeof (vt_check_static_pcre_t), list, sec);
+  if (ret != VT_SUCCESS) {
+    err = ret;
+    goto FAILURE;
   }
 
-  info = (vt_static_pcre_t *) check->info;
+  data = (vt_check_static_pcre_t *)check->data;
+  data->attrib = vt_request_attrtoid (cfg_getstr ((cfg_t *)sec, "member"));
+  data->negate = cfg_getbool ((cfg_t *)sec, "negate") ? 1 : 0;
+  data->weight = vt_check_weight (cfg_getfloat ((cfg_t *)sec, "weight"));
 
-  if ((value = cfg_getstr ((cfg_t *)sec, "attribute")) == NULL) {
-    vt_error ("%s: attribute mandatory", __func__);
-    vt_static_pcre_destroy (check);
-    return VT_ERR_INVAL;
-  }
-
-  if ((info->attrib = vt_request_attrtoid (value)) == -1) {
-    vt_error ("%s: invalid attribute: %s", __func__, value);
-    vt_static_pcre_destroy (check);
-    return VT_ERR_INVAL;
-  }
-
-  if ((value = cfg_getstr ((cfg_t *)sec, "pattern")) == NULL) {
-    vt_error ("%s: pattern mandatory", __func__);
-    vt_static_pcre_destroy (check);
-    return VT_ERR_INVAL;
-  }
-
-  info->negate = cfg_getbool ((cfg_t *)sec, "negate") ? 1 : 0;
-  info->weight = vt_check_weight (cfg_getfloat ((cfg_t *)sec, "weight"));
-
-  if ((pattern = vt_check_unescape_pattern (value)) == NULL) {
+  ptrn1 = cfg_getstr ((cfg_t *)sec, "pattern");
+  if ((ptrn2 = vt_check_unescape_pattern (ptrn1)) == NULL) {
     vt_error ("%s: %s", __func__, strerror (errno));
-    vt_static_pcre_destroy (check);
-    return VT_ERR_NOMEM;
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
   }
 
   if (cfg_getbool ((cfg_t *)sec, "nocase"))
@@ -144,153 +114,133 @@ vt_static_pcre_create (vt_check_t **dest, const cfg_t *sec)
   else
     options = PCRE_UTF8;
 
-  info->regex = pcre_compile (pattern, options, (const char **) &errptr, &erroffset, NULL);
-  free (pattern);
-
-  if (info->regex == NULL) {
+  data->regex = pcre_compile (ptrn2, options, (const char **)&errptr,
+    &erroffset, NULL);
+  free (ptrn2);
+  if (! data->regex) {
     vt_error ("%s: pcre_compile: compilation failed at offset %d: %s",
       __func__, erroffset, errptr);
-    vt_static_pcre_destroy (check);
-    return VT_ERR_INVAL;
+    err = VT_ERR_BADCFG;
+    goto FAILURE;
   }
 
-  if ((info->regex_extra = pcre_study (info->regex, 0, (const char **) &errptr)) == NULL) {
+  data->regex_extra = pcre_study (info->regex, 0, (const char **) &errptr);
+  if (! data->regex_extr) {
     vt_error ("%s: pcre_study: %s", __func__, errptr);
-    vt_static_pcre_destroy (check);
-    return VT_ERR_INVAL;
+    err = VT_ERR_BADCFG;
+    goto FAILURE;
   }
 
   check->prio = 2;
-  check->check_func = &vt_static_pcre_check;
-  check->destroy_func = &vt_static_pcre_destroy;
+  check->check_func = &vt_check_static_pcre_check;
+  check->weight_func = &vt_check_static_pcre_weight;
+  check->destroy_func = &vt_check_static_pcre_destroy;
 
- *dest = check;
+  *dest = check;
   return VT_SUCCESS;
+FAILURE:
+  vt_check_static_pcre_destroy (check);
+  return err;
 }
 
 int
-vt_dynamic_pcre_create (vt_check_t **dest, const cfg_t *sec)
+vt_check_dynamic_pcre_create (vt_check_t **dest, const vt_map_list_t *list,
+  const cfg_t *sec)
 {
-  char *value;
-  vt_check_t *check;
-  vt_dynamic_pcre_t *info;
+  char *ptrn;
+  vt_check_t *check = NULL;
+  vt_check_dynamic_pcre_t *data;
 
-  if ((value = (char *)cfg_title ((cfg_t *)sec)) == NULL) {
-    vt_error ("%s: title for check section missing", __func__);
-    return VT_ERR_INVAL;
-  }
-  if ((check = vt_check_alloc (sizeof (vt_dynamic_pcre_t), value)) == NULL) {
-    vt_error ("%s: vt_check_alloc: %s", __func__, strerror (errno));
-    return VT_ERR_NOMEM;
+  ret = vt_check_create (&check, sizeof (vt_check_static_pcre_t), list, sec);
+  if (ret != VT_SUCCESS) {
+    err = ret;
+    goto FAILURE;
   }
 
-  info = (vt_dynamic_pcre_t *) check->info;
+  data = (vt_check_dynamic_pcre_t *)check->data;
+  data->attrib = vt_request_attrtoid (cfg_getstr ((cfg_t *)sec, "member"));
+  data->negate = cfg_getbool ((cfg_t *)sec, "negate") ? 1 : 0;
+  data->weight = vt_check_weight (cfg_getfloat ((cfg_t *)sec, "weight"));
 
-  if ((value = cfg_getstr ((cfg_t *)sec, "attribute")) == NULL) {
-    vt_error ("%s: attribute mandatory", __func__);
-    vt_dynamic_pcre_destroy (check);
-    return VT_ERR_INVAL;
-  }
-
-  if ((info->attrib = vt_request_attrtoid (value)) == -1) {
-    vt_error ("%s: invalid attribute: %s", __func__, value);
-    vt_dynamic_pcre_destroy (check);
-    return VT_ERR_INVAL;
-  }
-
-  if ((value = cfg_getstr ((cfg_t *)sec, "pattern")) == NULL) {
-    vt_error ("%s: pattern mandatory", __func__);
-    vt_dynamic_pcre_destroy (check);
-    return VT_ERR_INVAL;
-  }
-
-  info->negate = cfg_getbool ((cfg_t *)sec, "negate") ? 1 : 0;
-  info->weight = vt_check_weight (cfg_getfloat ((cfg_t *)sec, "weight"));
-
-  if ((info->pattern = strdup (value)) == NULL) {
+  ptrn = cfg_getstr ((cfg_t *)sec, "pattern");
+  if ((data->pattern = strdup (ptrn)) == NULL) {
     vt_error ("%s: %s", __func__, strerror (errno));
-    vt_dynamic_pcre_destroy (check);
-    return VT_ERR_NOMEM;
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
   }
 
   if (cfg_getbool ((cfg_t *)sec, "nocase"))
-    info->options = PCRE_UTF8 | PCRE_CASELESS;
+    data->options = PCRE_UTF8 | PCRE_CASELESS;
   else
-    info->options = PCRE_UTF8;
+    data->options = PCRE_UTF8;
 
   check->prio = 3;
-  check->check_func = &vt_dynamic_pcre_check;
-  check->destroy_func = &vt_dynamic_pcre_destroy;
+  check->check_func = &vt_check_dynamic_pcre_check;
+  check->weight_func = &vt_check_dynamic_pcre_weight;
+  check->destroy_func = &vt_check_dynamic_pcre_destroy;
 
- *dest = check;
+  *dest = check;
   return VT_SUCCESS;
+FAILURE:
+  vt_check_dynamic_pcre_destroy (check);
+  return err;
 }
 
-int
-vt_static_pcre_destroy (vt_check_t *check)
+void
+vt_check_static_pcre_destroy (vt_check_t *check)
 {
-  vt_static_pcre_t *info;
+  vt_check_static_pcre_t *data;
 
   if (check) {
-    if (check->info) {
-      info = (vt_static_pcre_t *) check->info;
-
-      if (info->regex)
-        pcre_free (info->regex);
-      if (info->regex_extra)
-        pcre_free (info->regex_extra);
-      free (info);
+    if (check->data) {
+      data = (vt_check_static_pcre_t *)check->data;
+      if (data->regex)
+        pcre_free (data->regex);
+      if (data->regex_extra)
+        pcre_free (data->regex_extra);
     }
-
-    free (check);
+    vt_check_destroy (check);
   }
-
-  return VT_SUCCESS;
 }
 
-int
-vt_dynamic_pcre_destroy (vt_check_t *check)
+void
+vt_check_dynamic_pcre_destroy (vt_check_t *check)
 {
-  vt_dynamic_pcre_t *info;
+  vt_check_dynamic_pcre_t *data;
 
   if (check) {
-    if (check->info) {
-      info = (vt_dynamic_pcre_t *) check->info;
-
-      if (info->pattern)
-        free (info->pattern);
-      free (info);
+    if (check->data) {
+      data = (vt_check_dynamic_pcre_t *)check->data;
+      if (data->pattern)
+        free (data->pattern);
     }
-
-    free (check);
+    vt_check_destroy (check);
   }
-
-  return VT_SUCCESS;
 }
 
 int
-vt_static_pcre_check (vt_check_t *check,
-                      vt_request_t *request,
-                      vt_score_t *score,
-                      vt_stats_t *stats)
+vt_check_static_pcre_check (vt_check_t *check,
+                            vt_request_t *request,
+                            vt_score_t *score,
+                            vt_stats_t *stats)
 {
   char *attrib;
-  vt_static_pcre_t *info;
+  vt_check_static_pcre_t *data;
   int ret;
 
-  info = (vt_static_pcre_t *) check->info;
-  attrib = vt_request_attrbyid (request, info->attrib);
+  data = (vt_check_static_pcre_t *)check->data;
+  attrib = vt_request_attrbyid (request, data->attrib);
 
-  ret = pcre_exec (info->regex, info->regex_extra, attrib, strlen (attrib), 0,
+  ret = pcre_exec (data->regex, data->regex_extra, attrib, strlen (attrib), 0,
     0, NULL, 0);
 
   switch (ret) {
     case 0:
-      if (! info->negate)
-        vt_score_update (score, info->weight);
+      if (! data->negate)
+        vt_score_update (score, data->weight);
     case PCRE_ERROR_NOMATCH:
-      if (  info->negate)
-        vt_score_update (score, info->weight);
+      if (  data->negate)
+        vt_score_update (score, data->weight);
       break;
     case PCRE_ERROR_NOMEMORY:
       return VT_ERR_NOMEM;
@@ -304,7 +254,7 @@ vt_static_pcre_check (vt_check_t *check,
 #define escape_character(c) ((c) == '.' || (c) == '-' || (c) == ':' || (c) == '[' || (c) == ']')
 
 size_t
-vt_dynamic_pcre_escaped_len (const char *s)
+vt_check_dynamic_pcre_escaped_len (const char *s)
 {
   char *p;
   size_t n;
@@ -320,7 +270,7 @@ vt_dynamic_pcre_escaped_len (const char *s)
 }
 
 ssize_t
-vt_dynamic_pcre_escape (char *s1, size_t n, const char *s2)
+vt_check_dynamic_pcre_escape (char *s1, size_t n, const char *s2)
 {
   char *p1, *p2;
 
@@ -341,23 +291,23 @@ vt_dynamic_pcre_escape (char *s1, size_t n, const char *s2)
 #undef escape_character
 
 int
-vt_dynamic_pcre_check (vt_check_t *check,
-                       vt_request_t *request,
-                       vt_score_t *score,
-                       vt_stats_t *stats)
+vt_check_dynamic_pcre_check (vt_check_t *check,
+                             vt_request_t *request,
+                             vt_score_t *score,
+                             vt_stats_t *stats)
 {
   char *buf, *errptr, *attr1, *attr2, *p1, *p2, *p3;
-  vt_dynamic_pcre_t *info;
+  vt_check_dynamic_pcre_t *data;
   int erroffset, ret;
   pcre *re;
   size_t n;
   ssize_t m;
 
-  info = (vt_dynamic_pcre_t *) check->info;
-  attr1 = vt_request_attrbyid (request, info->attrib);
+  data = (vt_check_dynamic_pcre_t *)check->data;
+  attr1 = vt_request_attrbyid (request, data->attrib);
 
   /* calculate buffer size needed to store pattern */
-  for (n=1, p1=info->pattern; *p1; p1++) {
+  for (n=1, p1=data->pattern; *p1; p1++) {
     if (*p1 == '%' && *(++p1) != '%') {
       if ((p2 = strchr (p1, '%')) == NULL)
         return VT_ERR_INVAL;
@@ -366,7 +316,7 @@ vt_dynamic_pcre_check (vt_check_t *check,
       p1 = p2;
 
       if (attr2)
-        n += vt_dynamic_pcre_escaped_len (attr2);
+        n += vt_check_dynamic_pcre_escaped_len (attr2);
     } else {
       n++;
     }
@@ -384,7 +334,7 @@ vt_dynamic_pcre_check (vt_check_t *check,
         return VT_ERR_INVAL;
 
       if ((attr2 = vt_request_attrbynamen (request, p1, (size_t)(p2-p1)))) {
-        m = vt_dynamic_pcre_escape (p3, (size_t)(n - (p3-buf)), attr2);
+        m = vt_check_dynamic_pcre_escape (p3, (size_t)(n - (p3-buf)), attr2);
         if (m < 0)
           vt_panic ("%s: not enough space in output buffer", __func__);
         p3 += m;
@@ -400,7 +350,6 @@ vt_dynamic_pcre_check (vt_check_t *check,
  *p3 = '\0'; /* always null terminate */
   re = pcre_compile (buf, info->options, (const char **) &errptr, &erroffset, NULL);
 
-  vt_debug ("%s: pattern: %s", __func__, buf);
   free (buf);
 
   if (re == NULL)
@@ -412,12 +361,12 @@ vt_dynamic_pcre_check (vt_check_t *check,
 
   switch (ret) {
     case 0:
-      if (! info->negate)
-        vt_score_update (score, info->weight);
+      if (! data->negate)
+        vt_score_update (score, data->weight);
       break;
     case PCRE_ERROR_NOMATCH:
-      if (  info->negate)
-        vt_score_update (score, info->weight);
+      if (  data->negate)
+        vt_score_update (score, data->weight);
       break;
     case PCRE_ERROR_NOMEMORY:
       return VT_ERR_NOMEM;
@@ -426,4 +375,38 @@ vt_dynamic_pcre_check (vt_check_t *check,
   }
 
   return VT_SUCCESS;
+}
+
+int
+vt_check_static_pcre_weight (vt_check_t *check, int maximum)
+{
+  int weight = 0;
+  vt_check_static_pcre_t *data = (vt_check_static_pcre_t *)check->data;
+
+  if (maximum) {
+    if (data->weight > weight)
+      weight = data->weight;
+  } else {
+    if (data->weight < weight)
+      weight = data->weight;
+  }
+
+  return weight;
+}
+
+int
+vt_check_dynamic_pcre_weight (vt_check_t *check, int maximum)
+{
+  int weight = 0;
+  vt_check_dynamic_pcre_t *data = (vt_check_dynamic_pcre_t *)check->data;
+
+  if (maximum) {
+    if (data->weight > weight)
+      weight = data->weight;
+  } else {
+    if (data->weight < weight)
+      weight = data->weight;
+  }
+
+  return weight;
 }
