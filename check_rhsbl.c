@@ -7,10 +7,9 @@
 
 /* valiant includes */
 #include "check_rhsbl.h"
-#include "constants.h"
+#include "valiant.h"
 #include "rbl.h" /* share code between dnsbl and rhsbl */
 #include "thread_pool.h"
-#include "type.h"
 #include "utils.h"
 
 SPF_server_t *rhsbl_spf_server = NULL;
@@ -35,7 +34,7 @@ const vt_check_type_t vt_check_type_rhsbl = {
   .create_check_func = &vt_check_rhsbl_create
 };
 
-vt_check_type_t *
+const vt_check_type_t *
 vt_check_rhsbl_type (void)
 {
   return &vt_check_type_rhsbl;
@@ -59,7 +58,7 @@ vt_check_rhsbl_init (const cfg_t *sec)
 		max_tasks = (int)cfg_getint ((cfg_t *)sec, "max_tasks");
 
 		rhsbl_thread_pool = vt_thread_pool_create ("rhsbl", max_threads,
-			&vt_rhsbl_worker);
+			&vt_check_rhsbl_worker);
 
 		if (rhsbl_thread_pool == NULL)
       vt_fatal ("%s: vt_thread_pool_create: %s", __func__, strerror (errno));
@@ -109,7 +108,7 @@ int
 vt_check_rhsbl_create (vt_check_t **dest, const vt_map_list_t *list,
   const cfg_t *sec)
 {
-  int ret;
+  int ret, err;
   vt_check_t *check = NULL;
   vt_rbl_t *rbl = NULL;
 
@@ -138,8 +137,8 @@ vt_check_rhsbl_destroy (vt_check_t *check)
 {
   if (check) {
     if (check->data)
-      vt_rbl_destroy ((vt_rbl_t *)rbl);
-    vt_check_destroy (rbl);
+      vt_rbl_destroy ((vt_rbl_t *)check->data);
+    vt_check_destroy (check);
   }
 }
 

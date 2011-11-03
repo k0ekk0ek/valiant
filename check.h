@@ -46,7 +46,8 @@ struct vt_check_type_struct {
 };
 
 /* DO NOT USE, use create_check_func member */
-int vt_check_create (vt_check_t **, size_t, const vt_map_list_t *, const cfg_t);
+int vt_check_create (vt_check_t **, size_t, const vt_map_list_t *,
+  const cfg_t *);
 /* DO NOT USE, use destroy_func member */
 void vt_check_destroy (vt_check_t *);
 int vt_check_weight (float);

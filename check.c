@@ -7,7 +7,7 @@
 /* valiant includes */
 #include "valiant.h"
 #include "check.h"
-#include "set.h"
+#include "map.h"
 #include "utils.h"
 
 int
@@ -19,7 +19,7 @@ vt_check_create (vt_check_t **dest, size_t size, const vt_map_list_t *list,
   vt_check_t *check = NULL;
   vt_map_id_t *maps = NULL;
 
-  if ((title = cfg_title ((cfg_t *)sec)) == NULL) {
+  if ((title = (char *)cfg_title ((cfg_t *)sec)) == NULL) {
     vt_error ("%s: check title unavailable", __func__);
     err = VT_ERR_BADCFG;
     goto FAILURE;
@@ -41,6 +41,7 @@ vt_check_create (vt_check_t **dest, size_t size, const vt_map_list_t *list,
     goto FAILURE;
   }
 
+  check->maps = maps;
   *dest = check;
   return VT_SUCCESS;
 FAILURE:

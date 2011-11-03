@@ -7,10 +7,9 @@
 
 /* valiant includes */
 #include "check_dnsbl.h"
-#include "constants.h"
+#include "valiant.h"
 #include "rbl.h" /* share code between dnsbl and rhsbl */
 #include "thread_pool.h"
-#include "type.h"
 #include "utils.h"
 
 SPF_server_t *dnsbl_spf_server = NULL;
@@ -35,7 +34,7 @@ const vt_check_type_t vt_check_type_dnsbl = {
   .create_check_func = &vt_check_dnsbl_create
 };
 
-vt_check_type_t *
+const vt_check_type_t *
 vt_check_dnsbl_type (void)
 {
   return &vt_check_type_dnsbl;
@@ -59,7 +58,7 @@ vt_check_dnsbl_init (const cfg_t *sec)
 		max_tasks = (int)cfg_getint ((cfg_t *)sec, "max_tasks");
 
 		dnsbl_thread_pool = vt_thread_pool_create ("dnsbl", max_threads,
-			&vt_dnsbl_worker);
+			&vt_check_dnsbl_worker);
 
 		if (dnsbl_thread_pool == NULL)
       vt_fatal ("%s: vt_thread_pool_create: %s", __func__, strerror (errno));
@@ -140,8 +139,8 @@ vt_check_dnsbl_destroy (vt_check_t *check)
 {
   if (check) {
     if (check->data)
-      vt_rbl_destroy ((vt_rbl_t *)rbl);
-    vt_check_destroy (rbl);
+      vt_rbl_destroy ((vt_rbl_t *)check->data);
+    vt_check_destroy (check);
   }
 }
 

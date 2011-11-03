@@ -7,7 +7,7 @@
 #include <time.h>
 
 /* valiant includes */
-#include "constants.h"
+#include "valiant.h"
 #include "thread_pool.h"
 #include "utils.h"
 
@@ -149,7 +149,7 @@ vt_thread_pool_task_push (vt_thread_pool_t *pool, void *param)
   vt_slist_t *task;
 
   if (pthread_mutex_lock (&pool->lock))
-    return VT_ERR_SYSTEM;
+    return VT_ERR_SYS;
   if (THREADS_DEPLETED (pool) && QUEUE_FULL (pool))
     return VT_ERR_QFULL;
   if ((task = vt_slist_alloc ()) == NULL)
@@ -170,7 +170,7 @@ vt_thread_pool_task_push (vt_thread_pool_t *pool, void *param)
     signal = true;
   } else if (! THREADS_DEPLETED (pool)) {
     if (pthread_create (&worker, NULL, &thread_pool_worker, (void *)pool))
-      return VT_ERR_SYSTEM;
+      return VT_ERR_SYS;
 
     pool->num_threads++;
     pool->num_idle_threads++;
@@ -179,9 +179,9 @@ vt_thread_pool_task_push (vt_thread_pool_t *pool, void *param)
   }
 
   if (pthread_mutex_unlock (&pool->lock))
-    return VT_ERR_SYSTEM;
+    return VT_ERR_SYS;
   if (signal && pthread_cond_signal (&pool->signal))
-    return VT_ERR_SYSTEM;
+    return VT_ERR_SYS;
 
   return VT_SUCCESS;
 }

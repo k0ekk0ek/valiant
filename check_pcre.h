@@ -7,9 +7,6 @@
 /* valiant includes */
 #include "check.h"
 
-vt_check_type_t *vt_check_pcre_type (void);
-int vt_check_pcre_init (cfg_t *);
-int vt_check_pcre_create (vt_check_t **, const cfg_t *);
+const vt_check_type_t *vt_check_pcre_type (void);
 
 #endif
-

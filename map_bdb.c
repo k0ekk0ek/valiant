@@ -7,10 +7,10 @@
 #include <sys/types.h>
 
 /* valaint includes */
-#include "constants.h"
 #include "map.h"
 #include "map_bdb.h"
 #include "utils.h"
+#include "valiant.h"
 
 /* See section "Multithreaded applications" in Oracle Berkeley DB, Programmer's
    Reference Guide for information on how to use Berkeley DB in multithread
@@ -28,7 +28,7 @@ struct vt_map_bdb_struct {
 int vt_map_bdb_create (vt_map_t **, const cfg_t *);
 int vt_map_bdb_destroy (vt_map_t *);
 void vt_map_bdb_error_handler (const DB_ENV *, const char *, const char *);
-int vt_map_bdb_lookup (int *, const vt_map_t *map, const char *, size_t);
+int vt_map_bdb_lookup (vt_map_result_t *, const vt_map_t *map, const char *, size_t);
 
 const vt_map_type_t vt_map_type_bdb = {
   .name = "bdb",
@@ -60,7 +60,7 @@ vt_map_bdb_create (vt_map_t **dest, const cfg_t *sec)
     goto FAILURE;
   }
 
-  map->lookup_func = &vt_map_bdb_lookup;
+  map->search_func = &vt_map_bdb_lookup;
   map->destroy_func = &vt_map_bdb_destroy;
   data = (vt_map_bdb_t *)map->data;
 
@@ -79,7 +79,7 @@ vt_map_bdb_create (vt_map_t **dest, const cfg_t *sec)
 
   db->set_errcall (db, vt_map_bdb_error_handler);
 
-  ret = db->open (db, NULL, context->path, NULL, DB_HASH, DB_RDONLY, DB_THREAD);
+  ret = db->open (db, NULL, data->path, NULL, DB_HASH, DB_RDONLY, DB_THREAD);
   if (ret != 0) {
     vt_error ("%s: db_open: error opening database %s", __func__, data->path);
     err = VT_ERR_MAP;
@@ -130,13 +130,17 @@ vt_map_bdb_lookup (vt_map_result_t *res, const vt_map_t *map, const char *str,
   data.ulen = sizeof (tmp);
   data.flags = DB_DBT_USERMEM;
 
-  if (db->exists (db, NULL, &key, &data, 0) == DB_NOTFOUND) {
+fprintf (stderr, "%s (%d): key: %s\n", __func__, __LINE__, str);
+
+  if (db->get (db, NULL, &key, &data, 0) == DB_NOTFOUND) {
     *res = VT_MAP_RESULT_DUNNO;
   } else if (tmp == VT_MAP_RESULT_ACCEPT || tmp == VT_MAP_RESULT_REJECT) {
     *res = tmp;
   } else {
     *res = VT_MAP_RESULT_DUNNO;
   }
+
+fprintf (stderr, "%s (%d): result %d\n", __func__, __LINE__, *res);
 
   return VT_SUCCESS;
 }

@@ -12,7 +12,7 @@
 int
 vt_stage_create (vt_stage_t **dest, const vt_map_list_t *list, const cfg_t *sec)
 {
-  int ret;
+  int err, ret;
   vt_map_id_t *maps = NULL;
   vt_stage_t *stage = NULL;
 
@@ -24,6 +24,8 @@ vt_stage_create (vt_stage_t **dest, const vt_map_list_t *list, const cfg_t *sec)
     return err;
   }
 
+  stage->maps = maps;
+  *dest = stage;
   return VT_SUCCESS;
 }
 
@@ -34,17 +36,22 @@ vt_stage_destroy (vt_stage_t *stage, bool checks)
 }
 
 int
-vt_stage_insert_check (vt_stage_t *stage, vt_check_t *check)
+vt_stage_set_check (vt_stage_t *stage, const vt_check_t *check)
 {
   vt_slist_t *cur, *next;
-
+  vt_check_t *p;
+//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  /* avoid duplicates */
   for (cur=stage->checks; cur; cur=cur->next) {
-    if (strcmp (check->name, cur->name) == NULL) {
+
+    p = (vt_check_t *)cur->data;
+//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+    if (strcmp (check->name, p->name) == 0) {
       vt_error ("%s: check %s already included", __func__, check->name);
       return VT_ERR_ALREADY;
     }
   }
-
+//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   if ((next = vt_slist_append (stage->checks, check)) == NULL) {
     vt_error ("%s: slist_append: %s", __func__, strerror (errno));
     return VT_ERR_NOMEM;
@@ -58,13 +65,15 @@ vt_stage_insert_check (vt_stage_t *stage, vt_check_t *check)
 }
 
 int
-vt_stage_update_weights (vt_stage_t *stage)
+vt_stage_lineup (vt_stage_t *stage)
 {
   vt_check_t *check;
   vt_slist_t *entry;
   int max, min;
 
   max = min = 0;
+
+  vt_slist_sort (stage->checks, &vt_check_sort);
 
   for (entry=stage->checks; entry; entry=entry->next) {
     if (entry->data) {
@@ -81,42 +90,43 @@ vt_stage_update_weights (vt_stage_t *stage)
 }
 
 int
-vt_stage_do (vt_stage_t *stage,
-             vt_request_t *request,
-             vt_score_t *score,
-             vt_stats_t *stats,
-             vt_set_t *set)
+vt_stage_enter (vt_stage_t *stage,
+                vt_request_t *request,
+                vt_score_t *score,
+                vt_stats_t *stats,
+                vt_map_list_t *maps)
 {
-  int res, err;
+  int err, ret;
   vt_check_t *check;
+  vt_map_result_t *res;
   vt_slist_t *cur;
 
   err = VT_SUCCESS;
 
   /* check if this stage should be entered for the current request */
-  ret = vt_set_do (&res, set, stage->include, stage->exclude, request);
+  ret = vt_map_list_evaluate (&res, maps, stage->maps, request);
   if (ret != VT_SUCCESS)
     return ret;
-  if (! exec)
+  if (res == VT_MAP_RESULT_REJECT)
     return VT_SUCCESS;
 
   for (cur=stage->checks; cur; cur=cur->next) {
     check = (vt_check_t *)cur->data;
-    ret = vt_set_do (&res, set, check->include, stage->exclude, request);
+    /* check if this check should be evaluated for the current request */
+fprintf (stderr, "%s (%d): check name: %s\n", __func__, __LINE__, check->name);
+fprintf (stderr, "%s (%d): maps address: %d\n", __func__, __LINE__, check->maps);
+    ret = vt_map_list_evaluate (&res, maps, check->maps, request);
     if (ret != VT_SUCCESS) {
-      err = ret;
-      break;
+      return ret;
     }
-    if (res) {
+    if (res != VT_MAP_RESULT_REJECT) {
       ret = check->check_func (check, request, score, stats);
-      if (ret != VT_SUCCESS) {
-        err = ret;
-        break;
-      }
+      if (ret != VT_SUCCESS)
+        return ret;
     }
   }
 
   vt_score_wait (score);
 
-  return err;
+  return VT_SUCCESS;
 }

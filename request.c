@@ -10,24 +10,24 @@
 #include "utils.h"
 
 int
-vt_request_mbrtoid (vt_request_mbr_t *id, const char *name)
+vt_request_mbrtoid (vt_request_mbr_t *id, const char *mbr)
 {
-  if (name) {
-    if (strncasecmp (str, "helo_name", 9) == 0)
+  if (mbr) {
+    if (strncasecmp (mbr, "helo_name", 9) == 0)
       *id = HELO_NAME;
-    else if (strncasecmp (str, "sender", 6) == 0)
+    else if (strncasecmp (mbr, "sender", 6) == 0)
       *id = SENDER;
-    else if (strncasecmp (str, "sender_domain", 13) == 0)
+    else if (strncasecmp (mbr, "sender_domain", 13) == 0)
       *id = SENDER_DOMAIN;
-    else if (strncasecmp (str, "recipient", 9) == 0)
+    else if (strncasecmp (mbr, "recipient", 9) == 0)
       *id = RECIPIENT;
-    else if (strncasecmp (str, "recipient_domain", 16) == 0)
+    else if (strncasecmp (mbr, "recipient_domain", 16) == 0)
       *id = RECIPIENT_DOMAIN;
-    else if (strncasecmp (str, "client_address", 14) == 0)
+    else if (strncasecmp (mbr, "client_address", 14) == 0)
       *id = CLIENT_ADDRESS;
-    else if (strncasecmp (str, "client_name", 11) == 0)
+    else if (strncasecmp (mbr, "client_name", 11) == 0)
       *id = CLIENT_NAME;
-    else if (strncasecmp (str, "reverse_client_name", 19) == 0)
+    else if (strncasecmp (mbr, "reverse_client_name", 19) == 0)
       *id = REV_CLIENT_NAME;
 
     return VT_SUCCESS;
@@ -37,7 +37,7 @@ vt_request_mbrtoid (vt_request_mbr_t *id, const char *name)
 }
 
 int
-vt_request_mbrbyid (char **mbr, vt_request_t *request, vt_request_mbr_t id)
+vt_request_mbrbyid (char **mbr, const vt_request_t *request, vt_request_mbr_t id)
 {
   if (id == HELO_NAME)
     *mbr = request->helo_name;
@@ -62,7 +62,7 @@ vt_request_mbrbyid (char **mbr, vt_request_t *request, vt_request_mbr_t id)
 }
 
 int
-vt_request_mbrbyname (char **mbr, member, vt_request_t *request, char *str)
+vt_request_mbrbyname (char **mbr, const vt_request_t *request, const char *str)
 {
   if (strncasecmp (str, "helo_name", 9) == 0)
     *mbr = request->helo_name;
@@ -87,7 +87,7 @@ vt_request_mbrbyname (char **mbr, member, vt_request_t *request, char *str)
 }
 
 int
-vt_request_mbrbynamen (char **mbr, vt_request_t *request, const char *str,
+vt_request_mbrbynamen (char **mbr, const vt_request_t *request, const char *str,
   size_t len)
 {
   if (len == 9  && ! strncmp ("helo_name", str, len))

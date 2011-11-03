@@ -12,9 +12,9 @@
 #include <time.h>
 
 /* valiant includes */
-#include "constants.h"
 #include "rbl.h"
 #include "slist.h"
+#include "valiant.h"
 
 /*
  * type dnsbl {
@@ -174,7 +174,7 @@ vt_rbl_check (vt_check_t *check,
               vt_thread_pool_t *thread_pool)
 {
   int ret, skip;
-  vt_rbl_t *rbl = (vt_rbl_t *)check->info;
+  vt_rbl_t *rbl = (vt_rbl_t *)check->data;
   vt_rbl_param_t *param;
 
   if ((ret = vt_rbl_skip (&skip, rbl)) != VT_SUCCESS)
@@ -214,7 +214,7 @@ vt_rbl_worker (const vt_rbl_param_t *param,
   unsigned long address;
 
   check = param->check;
-  rbl = (vt_rbl_t *)check->info;
+  rbl = (vt_rbl_t *)check->data;
   score = param->score;
 
   dns_rr = SPF_dns_lookup (spf_server->resolver, query, ns_t_a, 0);
@@ -267,14 +267,14 @@ vt_rbl_skip (int *skip, vt_rbl_t *rbl)
 
   if ((ret = pthread_rwlock_rdlock (rbl->lock))) {
     vt_error ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYSTEM;
+    return VT_ERR_SYS;
   }
 
   *skip = (rbl->back_off > now) ? 1 : 0;
 
   if ((ret = pthread_rwlock_unlock (rbl->lock))) {
     vt_error ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYSTEM;
+    return VT_ERR_SYS;
   }
 
   return VT_SUCCESS;
@@ -290,7 +290,7 @@ vt_rbl_error (vt_rbl_t *rbl)
 
   if ((ret = pthread_rwlock_wrlock (rbl->lock))) {
     vt_error ("%s: pthread_rwlock_wrlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYSTEM;
+    return VT_ERR_SYS;
   }
 
   if (now > rbl->back_off) {

@@ -7,6 +7,9 @@
 #include <stdbool.h>
 #include <sys/types.h>
 
+/* valiant includes */
+#include "request.h"
+
 #define VT_MAP_RESP_EMPTY (0)
 #define VT_MAP_RESP_FOUND (1)
 #define VT_MAP_RESP_NOT_FOUND (2)
@@ -51,7 +54,7 @@ struct vt_map_type_struct {
 };
 
 /* DO NOT USE, use create_map_func member */
-int vt_map_create (vt_map_t **, size_t, const char *cfg_t);
+int vt_map_create (vt_map_t **, size_t, const cfg_t *);
 /* DO NOT USE, use destroy_func member */
 int vt_map_destroy (vt_map_t *);
 int vt_map_ids_create (vt_map_id_t **, const vt_map_list_t *, const cfg_t *);

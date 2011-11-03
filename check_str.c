@@ -8,7 +8,6 @@
 
 /* valiant includes */
 #include "check_str.h"
-#include "type.h"
 #include "utils.h"
 #include "valiant.h"
 
@@ -16,7 +15,7 @@
 typedef struct vt_check_str_struct vt_check_str_t;
 
 struct vt_check_str_struct {
-  vt_request_member_t member;
+  vt_request_mbr_t member;
   char *pattern;
   int nocase;
   int negate;
@@ -26,6 +25,7 @@ struct vt_check_str_struct {
 /* prototypes */
 /* NOTE: "normal" checks and "nocase" checks are split up because I want to
    support internationalized domain names (IDN) eventually. */
+int vt_check_str_create (vt_check_t **, const vt_map_list_t *, const cfg_t *);
 void vt_check_str_destroy (vt_check_t *);
 int vt_check_static_str_check (vt_check_t *, vt_request_t *, vt_score_t *,
   vt_stats_t *);
@@ -38,14 +38,14 @@ int vt_check_dynamic_str_check_nocase (vt_check_t *, vt_request_t *,
 int vt_check_str_weight (vt_check_t *, int);
 
 const vt_check_type_t vt_check_type_str = {
-  .name = "str";
-  .flags = VT_CHECK_TYPE_FLAG_NONE;
-  .init_func = NULL;
-  .deinit_func = NULL;
-  .create_check_func = &vt_check_str_create;
+  .name = "str",
+  .flags = VT_CHECK_TYPE_FLAG_NONE,
+  .init_func = NULL,
+  .deinit_func = NULL,
+  .create_check_func = &vt_check_str_create,
 };
 
-vt_check_type_t *
+const vt_check_type_t *
 vt_check_str_type (void)
 {
   return &vt_check_type_str;
@@ -88,7 +88,7 @@ vt_check_str_create (vt_check_t **dest, const vt_map_list_t *list,
   data->nocase = cfg_getbool ((cfg_t *)sec, "nocase") ? 1 : 0;
   data->weight = vt_check_weight (cfg_getfloat ((cfg_t *)sec, "weight"));
 
-  if (vt_check_dynamic_pattern (pattern)) {
+  if (vt_check_dynamic_pattern (ptrn)) {
     if (data->nocase)
       check->check_func = &vt_check_dynamic_str_check_nocase;
     else
@@ -144,7 +144,7 @@ vt_check_static_str_check (vt_check_t *check,
   vt_check_str_t *data;
 
   data = (vt_check_str_t *)check->data;
-  attrib = vt_request_attrbyid (request, data->attrib);
+  vt_request_mbrbyid (&attrib, request, data->member);
 
   if (strcmp (attrib, data->pattern) == 0 || data->negate)
     vt_score_update (score, data->weight);
@@ -162,7 +162,7 @@ vt_check_static_str_check_nocase (vt_check_t *check,
   vt_check_str_t *data;
 
   data = (vt_check_str_t *)check->data;
-  attrib = vt_request_attrbyid (request, data->attrib);
+  vt_request_mbrbyid (&attrib, request, data->member);
 
   if (strcasecmp (attrib, data->pattern) == 0 || data->negate)
     vt_score_update (score, data->weight);
@@ -181,7 +181,7 @@ vt_check_dynamic_str_check (vt_check_t *check,
   vt_check_str_t *data;
 
   data = (vt_check_str_t *)check->data;
-  s1 = vt_request_attrbyid (request, data->attrib);
+  vt_request_mbrbyid (&s1, request, data->member);
 
   for (p1=data->pattern; *s1 && *p1; p1++) {
     if (*p1 == '%' && *(++p1) != '%') {
@@ -189,7 +189,7 @@ vt_check_dynamic_str_check (vt_check_t *check,
       // FIXME: provide more information on errors
       if ((p2 = strchr (p1, '%')) == NULL)
         return VT_ERR_INVAL;
-      if ((s2 = vt_request_attrbynamen (request, p1, (size_t) (p2 - p1))) == NULL)
+      if (vt_request_mbrbynamen (&s2, request, p1, (size_t) (p2 - p1)) != VT_SUCCESS)
         return VT_ERR_INVAL;
       p1 = p2;
 
@@ -224,7 +224,7 @@ vt_check_dynamic_str_check_nocase (vt_check_t *check,
   vt_check_str_t *data;
 
   data = (vt_check_str_t *)check->data;
-  s1 = vt_request_attrbyid (request, data->attrib);
+  vt_request_mbrbyid (&s1, request, data->member);
 
   for (p1=data->pattern; *s1 && *p1; p1++) {
     if (*p1 == '%' && *(++p1) != '%') {
@@ -232,7 +232,7 @@ vt_check_dynamic_str_check_nocase (vt_check_t *check,
       // FIXME: provide more information on errors
       if ((p2 = strchr (p1, '%')) == NULL)
         return VT_ERR_INVAL;
-      if ((s2 = vt_request_attrbynamen (request, p1, (size_t) (p2 - p1))) == NULL)
+      if (vt_request_mbrbynamen (&s2, request, p1, (size_t) (p2 - p1)) != VT_SUCCESS)
         return VT_ERR_INVAL;
       p1 = p2;
 
@@ -257,7 +257,7 @@ vt_check_dynamic_str_check_nocase (vt_check_t *check,
 #undef CHRCASECMP
 
 int
-vt_check_str_min_weight (vt_check_t *, int maximum)
+vt_check_str_weight (vt_check_t *check, int maximum)
 {
   int weight = 0;
   vt_check_str_t *data = (vt_check_str_t *)check->data;
