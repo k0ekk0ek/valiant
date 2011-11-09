@@ -7,8 +7,10 @@
 typedef struct vt_score_struct vt_score_t;
 
 struct vt_score_struct {
-  unsigned int writers;
+  vt_check_result_t *results;
+  unsigned int nresults;
   int points;
+  unsigned int writers;
   pthread_mutex_t lock;
   pthread_cond_t signal;
 };

@@ -262,7 +262,8 @@ main (int argc, char *argv[])
   };
 
   cfg_opt_t opts[] = {
-    CFG_SEC ("stage", stage_opts, CFGF_MULTI),
+    // policy included here
+		CFG_SEC ("stage", stage_opts, CFGF_MULTI),
     CFG_SEC ("map", map_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
     CFG_SEC ("type", type_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
     CFG_END ()
@@ -288,6 +289,8 @@ main (int argc, char *argv[])
   //  vt_panic ("%s: configuration error", __func__);
   //int *maps, exists, exec;
 
+	// ... ...
+
   vt_map_list_cache_reset (maps);
 //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   for (cur=stages; cur; cur=cur->next) {
@@ -295,6 +298,8 @@ main (int argc, char *argv[])
     //vt_request_t *, vt_score_t *, vt_stats_t *, vt_map_list_t *
     vt_stage_enter (stage, &request, score, NULL, maps);
   }
+
+  // start making it a daemon... think
 
   printf ("done, weight is %d, bye\n", score->points);
   return 0;

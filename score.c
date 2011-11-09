@@ -112,23 +112,17 @@ vt_score_unlock (vt_score_t *score)
 }
 
 int
-vt_score_update (vt_score_t *score, int points)
+vt_score_update (vt_score_t *score, unsigned int id, vt_check_result_t match,
+  int points)
 {
-  int ret;
-
-  if (points == 0)
-    return 0;
-
-  if ((ret = pthread_mutex_lock (&score->lock)) != 0) {
-    vt_error ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
-    errno = ret;
-    return -1;
-  }
-
-  score->points += points;
-
-  if ((ret = pthread_mutex_unlock (&score->lock)) != 0)
-    vt_panic ("%s: pthread_mutex_unlock: %s", strerror (ret));
+  /* NOTE: Since this function is called many times throughout the application,
+     I thought I would optimize it by leaving out the mutexes. If there's
+     something utterly wrong with this approach, please notify me. */
+  __sync_add_and_fetch (&score->points, points);
+  /* NOTE: Since every check has a unique identifier, it shouldn't be necessary
+     to protect the results with a memory barrier. Again if this assumption is
+     false, please notify me. */
+  score->results[id] = match;
 
   return 0;
 }

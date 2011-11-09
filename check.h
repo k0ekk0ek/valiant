@@ -19,6 +19,8 @@ typedef int(*VT_CHECK_WEIGHT_FUNC)(vt_check_t *, int);
 typedef void(*VT_CHECK_DESTROY_FUNC)(vt_check_t *);
 
 struct vt_check_struct {
+  unsigned int id; /* check identifier (position in array actually) used to
+                      keep statistics */
   char *name; /* check title */
   unsigned int prio; /* indicates check cost */
   void *data; /* check specific information */

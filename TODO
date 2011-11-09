@@ -6,7 +6,7 @@ v 5.  Remove type.h and move it's contents to check.h.
 v 6.  Rename "attribute" to member in check configuration section.
 v 7.  Rename member "context" in vt_map_type_t and member "info" in vt_type_t
       to data.
-  8.  Move some of the configuration validation to libconfuse. See:
+v 8.  Move some of the configuration validation to libconfuse. See:
       http://www.nongnu.org/confuse/manual/ftpconf_8c-example.html
 v 9.  Move some of the check creation to check_alloc and rename it to
       check_create.
@@ -24,7 +24,19 @@ v 18. Create enum for request members.
 v 19. Rename constants.h to valiant.h.
   20. Create check variant (check_map) that does a map lookup and increments
       the score with the specified value.
-  21. Finnish implementation of stages.
+v 21. Finish implementation of stages.
+  22. Expand configuration validation.
+  23. Find out what extra configuration options should be available to control
+      program execution etc.
+      Example: http://code.google.com/p/gross/wiki/NewConfigFileFormat
+  24. Implement request parsing.
+  25. Implement syslog support.
+  26. Implement debug support.
+  27. Make API changes to support new statistics gathering method.
+  28. Implement support for reloading and verify all unused memory etc gets
+      cleaned up.
+  29. Implement support for SPF checks.
+  30. Make it a daemon.
   X.  Implement vt_map_pgsql_t.
   X.  Document code.
   X.  Implement IPv6 support for DNSBL checks.

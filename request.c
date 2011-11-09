@@ -5,7 +5,7 @@
 #include <sys/types.h>
 
 /* prefix includes */
-#include "valiant.h"
+#include "consts.h"
 #include "request.h"
 #include "utils.h"
 
