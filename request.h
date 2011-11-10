@@ -30,6 +30,7 @@ struct vt_request_struct {
   char *reverse_client_name;
 };
 
+int vt_request_parse (vt_request_t *, int);
 int vt_request_mbrtoid (vt_request_mbr_t *, const char *);
 int vt_request_mbrbyid (char **, const vt_request_t *, vt_request_mbr_t);
 int vt_request_mbrbyname (char **, const vt_request_t *, const char *);

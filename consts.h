@@ -13,5 +13,6 @@
 #define VT_ERR_ALREADY (6)
 #define VT_ERR_BADCFG (7)
 #define VT_ERR_BADMBR (8)
+#define VT_ERR_NOBUFS (9)
 
 #endif
