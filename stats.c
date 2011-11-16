@@ -1,10 +1,12 @@
 /* system includes */
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
 /* valiant includes */
+#include "consts.h"
 #include "score.h"
 #include "stats.h"
 #include "utils.h"
@@ -20,8 +22,8 @@ vt_stats_create (vt_stats_t **dest)
     return VT_ERR_NOMEM;
   }
 
-  stats->utime = time (NULL);
-  stats->mtime = stats->utime;
+  stats->ctime = time (NULL);
+  stats->mtime = stats->ctime;
 
   if ((ret = pthread_mutex_init (&stats->lock, NULL)) != 0) {
     vt_error ("%s: pthread_mutex_init: %s", __func__, strerror (ret));
@@ -32,7 +34,7 @@ vt_stats_create (vt_stats_t **dest)
     goto FAILURE_MUTEX_INIT;
   }
 
-  if ((ret = pthread_cond_init (&stats->signal)) != 0) {
+  if ((ret = pthread_cond_init (&stats->signal, NULL)) != 0) {
     vt_error ("%s: pthread_cond_init: %s", __func__, strerror (ret));
     if (ret == ENOMEM)
       err = VT_ERR_NOMEM;
@@ -74,7 +76,7 @@ vt_stats_add_cntr (unsigned int *id, vt_stats_t *stats, const char *name)
   cntrs = NULL;
   if (! (cntr = malloc0 (sizeof (vt_stats_cntr_t))) ||
       ! (cntr->name = strdup (name)) ||
-      ! (cntrs = realloc (sizeof (vt_stats_cntr_t *) * (stats->ncntrs + 2))))
+      ! (cntrs = realloc (stats->cntrs, sizeof (vt_stats_cntr_t *) * (stats->ncntrs + 2))))
   {
     vt_error ("%s: %s", __func__, strerror (errno));
     err = VT_ERR_NOMEM;
@@ -111,7 +113,7 @@ vt_stats_get_cntr_id (unsigned int *id, const vt_stats_t *stats,
 }
 
 void
-vt_stats_update (vt_stats_t *stats, vt_score_t *score)
+vt_stats_update (vt_stats_t *stats, const vt_score_t *score)
 {
   int ret;
   unsigned int i;
@@ -148,7 +150,7 @@ vt_stats_print (vt_stats_t *stats)
   time_t ctime, utime;
   unsigned long nreqs;
   unsigned int i, ncntrs;
-  vt_counter_t *cntr;
+  vt_stats_cntr_t *cntr;
 
   if (pthread_mutex_lock (&stats->lock) != 0)
     vt_fatal ("%s: pthread_mutex_lock: %s", __func__, strerror (errno));
@@ -163,7 +165,7 @@ vt_stats_print (vt_stats_t *stats)
       max = (stats->cntrs)[i]->len;
   }
 
-  max += (SIZE_MAX_CHARS + FMT_NUM_CHARS + 1)
+  max += (SIZE_MAX_CHARS + FMT_NUM_CHARS + 1);
   if (max > (ssize_t)(SIZE_MAX / ncntrs)) {
     vt_error ("%s: not enough memory to print statistics", __func__);
     err = VT_ERR_NOMEM;
@@ -180,7 +182,7 @@ vt_stats_print (vt_stats_t *stats)
 
   for (i=0, ptr=str; i < ncntrs; i++, ptr+=max) {
     cntr = (stats->cntrs)[i];
-    num = snprintf (ptr, FMT, max, cntr->name, cntr->hits);
+    num = snprintf (ptr, max, FMT, max, cntr->name, cntr->hits);
     if (num < 0) {
       vt_error ("%s: malloc0: %s", __func__, strerror (errno));
       if (errno == ENOMEM)
@@ -198,7 +200,7 @@ UNLOCK:
 
   if (err == VT_SUCCESS) {
     vt_info ("running for %j seconds since %s",
-      utime, asctime (localtime (ctime)));
+      utime, asctime (localtime (&ctime)));
     vt_info ("number of requests %d", nreqs);
     for (i=0, ptr=str; i < ncntrs; i++, ptr+=max) {
       vt_info ("%s", ptr);
@@ -218,7 +220,7 @@ UNLOCK:
 int
 vt_stats_lock (vt_stats_t *stats)
 {
-  int err;
+  int err, ret;
 
   if ((ret = pthread_mutex_lock (&stats->lock)) != 0) {
     vt_error ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
@@ -228,7 +230,10 @@ vt_stats_lock (vt_stats_t *stats)
 }
 
 int
-vt_stats_unlock (vt_stats
+vt_stats_unlock (vt_stats_t *stats)
+{
+  return 0;
+}
 
 int
 vt_stats_print_cycle (vt_stats_t *stats, time_t cycle)
@@ -253,16 +258,16 @@ vt_stats_print_cycle (vt_stats_t *stats, time_t cycle)
 }
 
 // do stuff, create new thread in vt_stats_printer and let it execute
-void
-vt_stats_worker (void *arg)
-{
-  // IMPLEMENT
-}
-
-int
-vt_stats_printer (vt_stats_t *stats)
-{
-  // thread that prints statistics at given intervals etc, etc
-  // does a timed wait etc
-  // IMPLEMENT, just not needed now!
-}
+//void
+//vt_stats_worker (void *arg)
+//{
+//  // IMPLEMENT
+//}
+//
+//int
+//vt_stats_printer (vt_stats_t *stats)
+//{
+//  // thread that prints statistics at given intervals etc, etc
+//  // does a timed wait etc
+//  // IMPLEMENT, just not needed now!
+//}

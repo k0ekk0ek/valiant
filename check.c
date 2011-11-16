@@ -5,7 +5,7 @@
 #include <string.h>
 
 /* valiant includes */
-#include "valiant.h"
+#include "consts.h"
 #include "check.h"
 #include "map.h"
 #include "utils.h"

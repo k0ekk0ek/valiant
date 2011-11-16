@@ -9,7 +9,7 @@
 /* valiant includes */
 #include "check_str.h"
 #include "utils.h"
-#include "valiant.h"
+#include "consts.h"
 
 /* definitions */
 typedef struct vt_check_str_struct vt_check_str_t;
@@ -147,7 +147,7 @@ vt_check_static_str_check (vt_check_t *check,
   vt_request_mbrbyid (&attrib, request, data->member);
 
   if (strcmp (attrib, data->pattern) == 0 || data->negate)
-    vt_score_update (score, data->weight);
+    vt_score_update (score, check->id, data->weight);
 
   return VT_SUCCESS;
 }
@@ -165,7 +165,7 @@ vt_check_static_str_check_nocase (vt_check_t *check,
   vt_request_mbrbyid (&attrib, request, data->member);
 
   if (strcasecmp (attrib, data->pattern) == 0 || data->negate)
-    vt_score_update (score, data->weight);
+    vt_score_update (score, check->id, data->weight);
 
   return VT_SUCCESS;
 }
@@ -206,7 +206,7 @@ vt_check_dynamic_str_check (vt_check_t *check,
   }
 
   if (*s1 == *p1 || data->negate)
-    vt_score_update (score, data->weight);
+    vt_score_update (score, check->id, data->weight);
 
   return VT_SUCCESS;
 }
@@ -249,7 +249,7 @@ vt_check_dynamic_str_check_nocase (vt_check_t *check,
   }
 
   if (*s1 == *p1 || data->negate)
-    vt_score_update (score, data->weight);
+    vt_score_update (score, check->id, data->weight);
 
   return VT_SUCCESS;
 }

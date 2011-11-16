@@ -7,7 +7,7 @@
 
 /* valiant includes */
 #include "check_rhsbl.h"
-#include "valiant.h"
+#include "consts.h"
 #include "rbl.h" /* share code between dnsbl and rhsbl */
 #include "thread_pool.h"
 #include "utils.h"

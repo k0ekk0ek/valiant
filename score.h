@@ -7,8 +7,8 @@
 typedef struct vt_score_struct vt_score_t;
 
 struct vt_score_struct {
-  vt_check_result_t *results;
-  unsigned int nresults;
+  int *cntrs;
+  unsigned int ncntrs;
   int points;
   unsigned int writers;
   pthread_mutex_t lock;
@@ -21,7 +21,7 @@ int vt_score_destroy (vt_score_t *);
 int vt_score_lock (vt_score_t *);
 int vt_score_unlock (vt_score_t *);
 
-int vt_score_update (vt_score_t *, int);
+int vt_score_update (vt_score_t *, unsigned int, int);
 int vt_score_wait (vt_score_t *);
 
 #endif

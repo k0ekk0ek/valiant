@@ -11,7 +11,7 @@
 #include "check_pcre.h"
 #include "map.h"
 #include "utils.h"
-#include "valiant.h"
+#include "consts.h"
 
 typedef struct vt_check_static_pcre_struct vt_check_static_pcre_t;
 
@@ -240,10 +240,10 @@ vt_check_static_pcre_check (vt_check_t *check,
   switch (ret) {
     case 0:
       if (! data->negate)
-        vt_score_update (score, data->weight);
+        vt_score_update (score, check->id, data->weight);
     case PCRE_ERROR_NOMATCH:
       if (  data->negate)
-        vt_score_update (score, data->weight);
+        vt_score_update (score, check->id, data->weight);
       break;
     case PCRE_ERROR_NOMEMORY:
       return VT_ERR_NOMEM;
@@ -365,11 +365,11 @@ vt_check_dynamic_pcre_check (vt_check_t *check,
   switch (ret) {
     case 0:
       if (! data->negate)
-        vt_score_update (score, data->weight);
+        vt_score_update (score, check->id, data->weight);
       break;
     case PCRE_ERROR_NOMATCH:
       if (  data->negate)
-        vt_score_update (score, data->weight);
+        vt_score_update (score, check->id, data->weight);
       break;
     case PCRE_ERROR_NOMEMORY:
       return VT_ERR_NOMEM;

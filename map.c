@@ -8,7 +8,7 @@
 #include <sys/types.h>
 
 /* valiant includes */
-#include "valiant.h"
+#include "consts.h"
 #include "map.h"
 #include "request.h"
 #include "utils.h"

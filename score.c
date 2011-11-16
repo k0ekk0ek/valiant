@@ -112,8 +112,7 @@ vt_score_unlock (vt_score_t *score)
 }
 
 int
-vt_score_update (vt_score_t *score, unsigned int id, vt_check_result_t match,
-  int points)
+vt_score_update (vt_score_t *score, unsigned int id, int points)
 {
   /* NOTE: Since this function is called many times throughout the application,
      I thought I would optimize it by leaving out the mutexes. If there's
@@ -122,7 +121,7 @@ vt_score_update (vt_score_t *score, unsigned int id, vt_check_result_t match,
   /* NOTE: Since every check has a unique identifier, it shouldn't be necessary
      to protect the results with a memory barrier. Again if this assumption is
      false, please notify me. */
-  score->results[id] = match;
+  score->cntrs[id] = points ? 1 : 0;
 
   return 0;
 }

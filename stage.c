@@ -7,7 +7,7 @@
 #include "slist.h"
 #include "stage.h"
 #include "utils.h"
-#include "valiant.h"
+#include "consts.h"
 
 int
 vt_stage_create (vt_stage_t **dest, const vt_map_list_t *list, const cfg_t *sec)
@@ -85,48 +85,6 @@ vt_stage_lineup (vt_stage_t *stage)
 
   stage->max_weight = max;
   stage->min_weight = min;
-
-  return VT_SUCCESS;
-}
-
-int
-vt_stage_enter (vt_stage_t *stage,
-                vt_request_t *request,
-                vt_score_t *score,
-                vt_stats_t *stats,
-                vt_map_list_t *maps)
-{
-  int err, ret;
-  vt_check_t *check;
-  vt_map_result_t *res;
-  vt_slist_t *cur;
-
-  err = VT_SUCCESS;
-
-  /* check if this stage should be entered for the current request */
-  ret = vt_map_list_evaluate (&res, maps, stage->maps, request);
-  if (ret != VT_SUCCESS)
-    return ret;
-  if (res == VT_MAP_RESULT_REJECT)
-    return VT_SUCCESS;
-
-  for (cur=stage->checks; cur; cur=cur->next) {
-    check = (vt_check_t *)cur->data;
-    /* check if this check should be evaluated for the current request */
-fprintf (stderr, "%s (%d): check name: %s\n", __func__, __LINE__, check->name);
-fprintf (stderr, "%s (%d): maps address: %d\n", __func__, __LINE__, check->maps);
-    ret = vt_map_list_evaluate (&res, maps, check->maps, request);
-    if (ret != VT_SUCCESS) {
-      return ret;
-    }
-    if (res != VT_MAP_RESULT_REJECT) {
-      ret = check->check_func (check, request, score, stats);
-      if (ret != VT_SUCCESS)
-        return ret;
-    }
-  }
-
-  vt_score_wait (score);
 
   return VT_SUCCESS;
 }

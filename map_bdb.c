@@ -10,7 +10,7 @@
 #include "map.h"
 #include "map_bdb.h"
 #include "utils.h"
-#include "valiant.h"
+#include "consts.h"
 
 /* See section "Multithreaded applications" in Oracle Berkeley DB, Programmer's
    Reference Guide for information on how to use Berkeley DB in multithread

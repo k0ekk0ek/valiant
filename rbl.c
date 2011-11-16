@@ -14,7 +14,7 @@
 /* valiant includes */
 #include "rbl.h"
 #include "slist.h"
-#include "valiant.h"
+#include "consts.h"
 
 /*
  * type dnsbl {
@@ -247,7 +247,7 @@ vt_rbl_worker (const vt_rbl_param_t *param,
       }
 
       if (heaviest)
-        vt_score_update (score, heaviest->weight);
+        vt_score_update (score, check->id, heaviest->weight);
       break;
     case TRY_AGAIN: // SERVFAIL
       vt_rbl_error (rbl);

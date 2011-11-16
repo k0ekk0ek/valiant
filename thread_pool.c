@@ -7,7 +7,7 @@
 #include <time.h>
 
 /* valiant includes */
-#include "valiant.h"
+#include "consts.h"
 #include "thread_pool.h"
 #include "utils.h"
 

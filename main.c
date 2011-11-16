@@ -13,45 +13,14 @@
 #include "check_rhsbl.h"
 #include "check_str.h"
 #include "check_pcre.h"
-#include "valiant.h"
+#include "consts.h"
 #include "map.h"
 #include "map_bdb.h"
 #include "request.h"
+#include "settings.h"
 #include "score.h"
 #include "slist.h"
 #include "stage.h"
-
-int
-vt_cfg_maps_create (vt_map_list_t *set, vt_map_type_t *types[], const cfg_t *cfg)
-{
-  // IMPLEMENT
-  // aka... populate the vt_set_t structure!
-  cfg_t *sec;
-  char *type;
-  int i, j, n, done, ret, id;
-  vt_map_t *map;
-
-  for (i=0, n=cfg_size ((cfg_t *)cfg, "map"); i < n; i++) {
-    if ((sec = cfg_getnsec ((cfg_t *)cfg, "map", i)) &&
-        (type = cfg_getstr ((cfg_t *)sec, "type")))
-    {
-//fprintf (stderr, "%s (%d): type = %s\n", __func__, __LINE__, type);
-      for (j=0, done=0; ! done && types[j]; j++) {
-//fprintf (stderr, "%s (%d): type = %s, name = %s\n", __func__, __LINE__, type, types[j]->name);
-        if (strcmp (type, types[j]->name) == 0) {
-          done = 1;
-//fprintf (stderr, "found\n");
-          if ((ret = types[j]->create_map_func (&map, sec)) != VT_SUCCESS)
-            return ret; // FIXME: should destroy set?!?!
-          if ((ret = vt_map_list_set_map (&id, set, map)) != VT_SUCCESS)
-            return ret;
-        }
-      }
-    }
-  }
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-  return VT_SUCCESS;
-}
 
 int
 vt_cfg_types_init (vt_check_type_t *types[], const cfg_t *cfg)
@@ -87,99 +56,119 @@ vt_cfg_types_init (vt_check_type_t *types[], const cfg_t *cfg)
   return VT_SUCCESS;
 }
 
-int
-vt_cfg_stage_create (vt_stage_t **dest,
-                     const vt_check_type_t **types,
-                     const vt_map_list_t *set,
-                     const cfg_t *sec)
+
+
+
+
+void
+vt_worker (void *arg)
 {
-  cfg_t *subsec;
-  char *type;
+  int sockfd;
   int err, ret;
-  int i, j, n;
   vt_check_t *check;
-  vt_stage_t *stage = NULL;
+  vt_context_t *ctx;
+  vt_request_t *request;
+  vt_stage_t *stage;
 
-  if ((ret = vt_stage_create (&stage, set, (cfg_t *)sec)) != VT_SUCCESS)
-    return ret;
+  //vt_map_list_t *maps;
+  //vt_slist_t *root, *cur; // this should be defined in context
+  //vt_stage_t *stage; // this should be defined in context
+  //vt_stats_t *stats; // this should be defined in context
+  //vt_check_t *check;
+  //vt_map_result_t *res;
+  //vt_slist_t *cur;
 
-  /* create checks defined in stage */
-  for (i=0, n=cfg_size ((cfg_t *)sec, "check"); i < n; i++) {
-    if ((subsec = cfg_getnsec ((cfg_t *)sec, "check", i)) &&
-        (type = cfg_getstr (subsec, "type")))
-    {
-      check = NULL;
-      for (j=0; ! check && types[j]; j++) {
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-        if (strcmp (type, types[j]->name) == 0) {
-          ret = types[j]->create_check_func (&check, set, subsec);
+  sockfd = ((vt_request_arg_t *)arg)->sockfd;
+  ctx = ((vt_request_arg_t *)arg)->context;
+
+
+  // request is read here
+  // score is global or passed
+  // stats
+  // map list
+  //
+  //vt_request_arg_t *req = (vt_request_arg_t *)arg;
+  //
+  //int vt_stage_enter (vt_stage_t *, vt_request_t *, vt_score_t *, vt_stats_t *,
+  //  vt_map_list_t *);
+  //
+
+
+
+  if (vt_request_parse (&req, fd) != VT_SUCCESS) {
+    vt_error ("%s: cannot read request", __func__);
+    // treat as temporary error... I definitely need the context as well
+    // as a matter of fact, the context should contain the stages, just to
+    // make this stuff easier
+    vt_reply (fd, ctx->temporary_error);
+  }
+
+  //
+  // place contents of vt_stage_enter right here...
+  //
+  //int
+  //vt_stage_enter (vt_stage_t *stage,
+  //              vt_request_t *request,
+  //              vt_score_t *score,
+  //              vt_stats_t *stats,
+  //              vt_map_list_t *maps)
+  //{
+
+  ////st_root = ctx->stages;
+  for (st_cur = ctx->stages; st_cur; st_cur = st_cur->next) {
+    stage = (vt_stage_t *)st_cur->data;
+    ret = vt_map_list_evaluate (&res, maps, stage->maps, req);
+    if (ret != VT_SUCCESS) {
+      //// reply with temporary error... nothing we can do about it!
+    }
+    if (res == VT_MAP_RESULT_DO) {
+      for (ck_cur = stage->checks; ck_cur; ck_cur = ck_cur->next) {
+        check = (vt_check_t *)ck_cur->data;
+        ret = vt_map_list_evaluate (&res, maps, check->maps, req);
+
+        if (res == VT_MAP_RESULT_DO) {
+          ret = check->check_func (chk, req, score);
           if (ret != VT_SUCCESS) {
-            err = ret;
-            goto FAILURE;
+            // error
           }
         }
       }
 
-      if (! check) {
-        vt_error ("%s: invalid check type %s", __func__, type);
-        err = VT_ERR_INVAL;
-        goto FAILURE;
-      }
-//fprintf (stderr, "%s (%d): check name: %s\n", __func__, __LINE__, check->name);
-      if ((ret = vt_stage_set_check (stage, check)) != VT_SUCCESS) {
-        err = ret;
-        goto FAILURE;
-      }
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+      vt_score_wait (score);
     }
   }
 
-  *dest = stage;
-  return VT_SUCCESS;
+  err = VT_SUCCESS;
 
-FAILURE:
-  vt_stage_destroy (stage, true);
-  return err;
-}
+  /* check if this stage should be entered for the current request */
+  //ret = vt_map_list_evaluate (&res, maps, stage->maps, request);
+  //
+  //if (ret != VT_SUCCESS)
+  //  return ret;
+  //if (res == VT_MAP_RESULT_REJECT)
+  //  return VT_SUCCESS;
+  //
+  //for (cur=stage->checks; cur; cur=cur->next) {
+  //  check = (vt_check_t *)cur->data;
+  //  /* check if this check should be evaluated for the current request */
+  //  //fprintf (stderr, "%s (%d): check name: %s\n", __func__, __LINE__, check->name);
+  //  //fprintf (stderr, "%s (%d): maps address: %d\n", __func__, __LINE__, check->maps);
+  //  ret = vt_map_list_evaluate (&res, maps, check->maps, request);
+  //  if (ret != VT_SUCCESS) {
+  //    return ret;
+  //  }
+  //  if (res != VT_MAP_RESULT_REJECT) {
+  //    ret = check->check_func (check, request, score, stats);
+  //    if (ret != VT_SUCCESS)
+  //      return ret;
+  //  }
+  //}
 
-int
-vt_cfg_stages_create (vt_slist_t **dest,
-                      const vt_check_type_t **types,
-                      const vt_map_list_t *set,
-                      const cfg_t *cfg)
-{
-  cfg_t *sec, *subsec;
-  int err, ret;
-  int i, n;
-  vt_slist_t *root, *next;
-  vt_stage_t *stage;
+  vt_score_wait (score);
 
-  root = next = NULL;
-  for (i=0, n=cfg_size ((cfg_t *)cfg, "stage"); i < n; i++) {
-    if ((sec = cfg_getnsec ((cfg_t *)cfg, "stage", i))) {
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-      if ((ret = vt_cfg_stage_create (&stage, types, set, sec)) != VT_SUCCESS) {
-        err = ret;
-        goto FAILURE;
-      }
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-      vt_stage_lineup (stage); /* align checks and calculate weights */
-
-      if ((next = vt_slist_append (root, stage)) == NULL) {
-        err = VT_ERR_NOMEM;
-        goto FAILURE;
-      }
-      if (root == NULL) {
-        root = next;
-      }
-    }
-  }
-
-  *dest = root;
-  return VT_SUCCESS;
-FAILURE:
-  // free stuff
-  return err;
+  //return VT_SUCCESS;
+  //}
+  //
 }
 
 int
@@ -189,19 +178,6 @@ main (int argc, char *argv[])
     fprintf (stderr, "Usage: %s CONFIG_FILE\n", argv[0]);
     return EXIT_FAILURE;
   }
-
-  vt_request_t request = {
-    .helo_name = "localhost",
-    .sender = "root@localhost",
-    .client_address = "127.0.0.1",
-    .client_name = "localhost",
-    .reverse_client_name = "localhost"
-  };
-
-  vt_score_t *score = vt_score_create ();
-
-  int i = 0;
-  int n = 2;
 
   vt_check_type_t *check_types[5];
   vt_map_type_t *map_types[2];
@@ -215,63 +191,39 @@ main (int argc, char *argv[])
   map_types[0] = vt_map_bdb_type ();
   map_types[1] = NULL;
 
+  // parse configuration
+  vt_context_t *ctx;
+  cfg_t *cfg = vt_cfg_parse (argv[1]);
+
+  if (! (ctx = malloc0 (sizeof (vt_context_t))))
+    vt_fatal ("%s: %s", __func__, strerror (ENOMEM));
+  if (vt_context_init (ctx, cfg) != VT_SUCCESS)
+    vt_fatal ("%s: error", __func__);
+
+  daemonize (ctx);
+
+  // create maps
+  // create stats
+  // create thread pool for handling requests...
+  // ...
+  // listen ();
+  // ...
+
+  // create argument that contains the stuff the worker needs
+
+  // create stages and checks
+  // open the socket
+  // create the workers
+  // I myself remain the "master" that will spawn new threads when necessary
+  // and I will handle the signals
+
+
 
   vt_check_t *check;
   vt_map_list_t *maps;
   vt_slist_t *stages, *cur;
   vt_stage_t *stage;
-
-  cfg_opt_t check_in_opts[] = {
-    CFG_FLOAT ("weight", 1.0, CFGF_NONE),
-    CFG_END ()
-  };
-
-  cfg_opt_t check_opts[] = {
-    CFG_SEC ("in", (cfg_opt_t *) check_in_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
-    CFG_STR_LIST ("maps", 0, CFGF_NONE),
-    CFG_STR ("member", 0, CFGF_NODEFAULT),
-    CFG_STR ("pattern", 0, CFGF_NODEFAULT),
-    CFG_BOOL ("negate", cfg_false, CFGF_NONE),
-    CFG_BOOL ("nocase", cfg_false, CFGF_NONE),
-    CFG_STR ("type", 0, CFGF_NODEFAULT),
-    CFG_STR ("zone", 0, CFGF_NODEFAULT),
-    CFG_BOOL ("ipv4", cfg_true, CFGF_NONE),
-    CFG_BOOL ("ipv6", cfg_false, CFGF_NONE),
-    CFG_FLOAT ("weight", 1.0, CFGF_NONE),
-  };
-
-  cfg_opt_t map_opts[] = {
-    CFG_STR ("type", 0, CFGF_NODEFAULT),
-    CFG_STR ("member", 0, CFGF_NODEFAULT),
-    CFG_STR ("path", 0, CFGF_NODEFAULT),
-    CFG_END ()
-  };
-
-  cfg_opt_t stage_opts[] = {
-    CFG_SEC ("check", check_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
-    CFG_STR_LIST ("maps", 0, CFGF_NONE),
-    CFG_END ()
-  };
-
-  cfg_opt_t type_opts[] = {
-    CFG_INT ("max_idle_threads", 10, CFGF_NONE),
-    CFG_INT ("max_tasks", 200, CFGF_NONE),
-    CFG_INT ("max_threads", 100, CFGF_NONE),
-    CFG_INT ("min_threads", 10, CFGF_NONE),
-    CFG_END ()    
-  };
-
-  cfg_opt_t opts[] = {
-    // policy included here
-		CFG_SEC ("stage", stage_opts, CFGF_MULTI),
-    CFG_SEC ("map", map_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
-    CFG_SEC ("type", type_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
-    CFG_END ()
-  };
-
-  cfg_t *cfg = cfg_init (opts, CFGF_NONE);
-
-  cfg_parse (cfg, argv[1]);
+  int *maps, exists, exec;
 
   // create a nice new set...
   if (vt_map_list_create (&maps) != VT_SUCCESS)
@@ -281,26 +233,20 @@ main (int argc, char *argv[])
 
   if (vt_cfg_types_init (check_types, cfg) != 0)
     vt_panic ("%s: configuration error", __func__);
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   if (vt_cfg_stages_create (&stages, check_types, maps, cfg) != VT_SUCCESS)
     vt_panic ("%s: cannot create stages", __func__);
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-  //if (vt_checks_init (&root, (const vt_type_t**)types, set, cfg))
-  //  vt_panic ("%s: configuration error", __func__);
-  //int *maps, exists, exec;
+  //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  if (vt_checks_init (&root, (const vt_type_t**)types, set, cfg))
+    vt_panic ("%s: configuration error", __func__);
 
-	// ... ...
-
-  vt_map_list_cache_reset (maps);
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-  for (cur=stages; cur; cur=cur->next) {
-    stage = (vt_stage_t *)cur->data;
-    //vt_request_t *, vt_score_t *, vt_stats_t *, vt_map_list_t *
-    vt_stage_enter (stage, &request, score, NULL, maps);
-  }
-
-  // start making it a daemon... think
-
-  printf ("done, weight is %d, bye\n", score->points);
-  return 0;
+  //vt_map_list_cache_reset (maps);
+  //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  //for (cur=stages; cur; cur=cur->next) {
+  //  stage = (vt_stage_t *)cur->data;
+  //  //vt_request_t *, vt_score_t *, vt_stats_t *, vt_map_list_t *
+  //  vt_stage_enter (stage, &request, score, NULL, maps);
+  //}
+  //printf ("done, weight is %d, bye\n", score->points);
+  //return 0;
 }

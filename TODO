@@ -29,14 +29,24 @@ v 21. Finish implementation of stages.
   23. Find out what extra configuration options should be available to control
       program execution etc.
       Example: http://code.google.com/p/gross/wiki/NewConfigFileFormat
-  24. Implement request parsing.
-  25. Implement syslog support.
-  26. Implement debug support.
-  27. Make API changes to support new statistics gathering method.
+v 24. Implement request parsing.
+v 25. Implement syslog support.
+v 26. Implement debug support.
+v 27. Make API changes to support new statistics gathering method.
   28. Implement support for reloading and verify all unused memory etc gets
       cleaned up.
   29. Implement support for SPF checks.
   30. Make it a daemon.
+  31. Design the context to contain the stages, maps, checks etc.
+  32. Add posibility to add default result to map, per check.
+  33. Stage should know how much the following stages can influence the score
+      and make decisions based on that knowledge.
+  34. Implement temporary error codes, this should allow us to not reject all
+      incoming messages when an error occurs.
+  35. Introduce small API changes, use pthread_* functions as an example.
+  36. Implement assertions.
+  37. Allocating the struct outside the function, and using a seperate init
+      function is the right way to go.
   X.  Implement vt_map_pgsql_t.
   X.  Document code.
   X.  Implement IPv6 support for DNSBL checks.

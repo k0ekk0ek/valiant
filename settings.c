@@ -1,11 +1,16 @@
 /* system includes */
 #include <confuse.h>
 #include <stdbool.h>
+#include <string.h>
+
+
+//#include <syslog.h>
 
 /* valiant includes */
 #include "consts.h"
 #include "request.h"
 #include "settings.h"
+#include "utils.h"
 
 unsigned int
 vt_cfg_size_opts (cfg_t *cfg)
@@ -41,6 +46,18 @@ vt_cfg_opt_parsed (cfg_opt_t *opt)
   if (opt && opt->nvalues && ! (opt->flags & CFGF_RESET))
     return 1;
   return 0;
+}
+
+char *
+vt_cfg_getstrdup (cfg_t *cfg, const char *name)
+{
+  char *s1, *s2;
+
+  if (! (s1 = cfg_getstr (cfg, name)))
+    return NULL;
+  if (! (s2 = strdup (s1)))
+    return NULL;
+  return s2;
 }
 
 int
@@ -177,6 +194,40 @@ vt_cfg_validate_stage (cfg_t *cfg, cfg_opt_t *opt)
   return 0;
 }
 
+int
+vt_cfg_validate_bind_address (cfg_t *cfg, cfg_opt_t *opt)
+{
+  // IMPLEMENT
+  return 0;
+}
+
+int
+vt_cfg_validate_port (cfg_t *cfg, cfg_opt_t *opt)
+{
+  // IMPLEMENT
+  return 0;
+}
+
+int
+vt_cfg_validate_log_facility (cfg_t *cfg, cfg_opt_t *opt)
+{
+  char *str;
+
+  if (! (str = cfg_getnstr (opt, 0)))
+    return -1;
+  return (vt_log_facility (str) >= 0) ? 0 : -1;
+}
+
+int
+vt_cfg_validate_log_priority (cfg_t *cfg, cfg_opt_t *opt)
+{
+  char *str;
+
+  if (! (str = cfg_getnstr (opt, 0)))
+    return -1;
+  return (vt_log_priority (str) >= 0) ? 0 : -1;
+}
+
 cfg_t *
 vt_cfg_parse (const char *path)
 {
@@ -223,10 +274,18 @@ vt_cfg_parse (const char *path)
     CFG_END ()    
   };
 
+  //cfg_opt_t policy_opts[] = {
+  //  CFG_SEC ("block", block
+  //};
+
   cfg_opt_t opts[] = {
     CFG_SEC ("stage", stage_opts, CFGF_MULTI),
     CFG_SEC ("map", map_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
     CFG_SEC ("type", type_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
+    CFG_STR ("pid_file", 0, CFGF_NODEFAULT),
+    CFG_STR ("log_ident", VT_LOG_IDENT, CFG_NONE),
+    CFG_STR ("log_facility", VT_LOG_FACILITY, CFGF_NONE),
+    CFG_STR ("log_level", 0, CFGF_NODEFAULT),
     CFG_END ()
   };
 
@@ -247,3 +306,233 @@ vt_cfg_parse (const char *path)
 
   return cfg;
 }
+
+int
+vt_context_init (vt_context_t *ctx,
+                 cfg_t *cfg,
+                 vt_map_type_t *map_types,
+                 vt_check_type_t *check_types)
+{
+  cfg_t *sec;
+  char *str;
+  int err;
+  int i, j, k, n, o; /* counters */
+  unsigned int id;
+  vt_map_t *map;
+  vt_slist_t *root, *next;
+
+  assert (ctx);
+  memset (ctx, 0, sizeof (vt_context_t));
+
+  if (! (ctx->bind_address = vt_cfg_getstrdup (cfg, "bind_address")) ||
+      ! (ctx->port = vt_cfg_getstrdup (cfg, "port")) ||
+      ! (ctx->pid_file = vt_cfg_getstrdup (cfg, "pid_file")) ||
+      ! (ctx->log_ident = vt_cfg_getstrdup (cfg, "log_identity")))
+  {
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
+  }
+
+  ctx->log_facility = vt_log_facility (cfg_getstr (cfg, "log_facility"));
+  ctx->log_prio = vt_log_priority (cfg_getstr (cfg, "log_priority"));
+
+  if (ctx->log_facility < 0 || ctx->log_prio < 0)
+    err = VT_ERR_BADCFG;
+    goto FAILURE;
+  }
+
+  /* init stats */
+  if (! (ctx->stats = malloc0 (sizeof (vt_stats_t)))) {
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
+  }
+  if ((err = vt_stats_init (ctx->stats)) != VT_SUCCESS) {
+    goto FAILURE;
+  }
+  /* counters are added below when adding checks */
+
+  /* init maps */
+  if (! (ctx->maps = malloc0 (sizeof (vt_map_list_t)))) {
+    err = VT_ERR_NOMEM;
+    goto FAILURE;
+  }
+  if ((err = vt_map_list_init (ctx->maps)) != VT_SUCCESS) {
+    goto FAILURE;
+  }
+
+  for (i = 0, n = cfg_size (cfg, "map"); i < n; i++) {
+    if ((sec = cfg_getnsec ((cfg_t *)cfg, "map", i)) &&
+        (str = cfg_getstr ((cfg_t *)sec, "type")))
+    {
+      for (j = 0; map_types[j]; j++) {
+        if (strcmp (str, map_types[j]->name) == 0) {
+          if ((err = map_types[j]->create_map_func (&map, sec)) != VT_SUCCESS)
+            goto FAILURE;
+          if ((err = vt_map_list_add_map (&id, ctx->maps, map)) != VT_SUCCESS)
+            goto FAILURE;
+          break;
+        }
+      }
+    }
+  }
+
+  /* init stages/checks */
+  for (i = 0, n = cfg_size (cfg, "stage"); i < n; i++) {
+    if ((sec = cfg_getnsec (cfg, "stage", i))) {
+
+      /* init stage */
+      if (! (stage = malloc0 (sizeof (vt_stage_t)))) {
+        err = VT_ERR_NOMEM;
+        goto FAILURE;
+      }
+      if ((err = vt_stage_init (stage)) != VT_SUCCESS) {
+        goto FAILURE;
+      }
+
+      // assign the maps 'n stuff to check
+      // add stage to list
+
+      for (j = 0, o = cfg_size (sec, "check"); j < o; j++) {
+        if ((subsec = cfg_getnsec (sec, "check", j)) &&
+            (type = cfg_getstr (subsec, "type")))
+        {
+          /* init check */
+          for (k = 0, check = NULL; ! check && check_types[k]; k++) {
+            if (strcmp (type, check_types[j]->name) == 0) {
+              err = check_types[j]->create_check_func (&check, set, subsec);
+              if (err != VT_SUCCESS) {
+                /* cleanup */
+                goto FAILURE;
+              }
+            }
+          }
+
+          if (! check) {
+            // big fat error
+          }
+          // vt_map_list_ids
+          if ((err = vt_stats_add_cntr (&check->id, stats, check)) != VT_SUCCESS) {
+            check->destroy_func (check);
+            goto FAILURE;
+          }
+          if ((err = vt_stage_add_check (stage, check)) != VT_SUCCESS) {
+            goto FAILURE;
+          }
+          // assign the maps 'n stuff to check
+          // add it to the stats 'n stuff
+          // add it to the stage 'n stuff
+        }
+      }
+
+      //
+
+      // if (! check) {
+      // vt_error ("%s: invalid check type %s", __func__, type);
+      // err = VT_ERR_INVAL;
+      // goto FAILURE;
+      // }
+      ////fprintf (stderr, "%s (%d): check name: %s\n", __func__, __LINE__, check->name);
+      //if ((ret = vt_stage_set_check (stage, check)) != VT_SUCCESS) {
+      // err = ret;
+      // goto FAILURE;
+      // }
+      ////fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+      //}
+      //  }
+      //}
+
+      //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+      //if ((ret = vt_cfg_stage_create (&stage, types, set, sec)) != VT_SUCCESS) {
+      //  err = ret;
+      //  goto FAILURE;
+      //}
+      //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+      //vt_stage_lineup (stage); /* align checks and calculate weights */
+      //
+      //if ((next = vt_slist_append (root, stage)) == NULL) {
+      //  err = VT_ERR_NOMEM;
+      //  goto FAILURE;
+      //}
+      //if (root == NULL) {
+      //  root = next;
+      //}
+    }
+  }
+
+  return VT_SUCCESS;
+
+FAILURE:
+  (void)vt_context_deinit (ctx);
+  return err;
+}
+
+int
+vt_context_deinit (vt_context_t *ctx)
+{
+  if (ctx) {
+    if (ctx->pid_file)
+      free (ctx->pid_file);
+    if (ctx->log_ident)
+      free (ctx->log_ident);
+
+    /* stages */
+    /* checks */
+    /* maps */  // FIXME: should destroy set?!?!
+
+    memset (ctx, 0, sizeof (vt_context_t));
+  }
+  return VT_SUCCESS;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
