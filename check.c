@@ -5,64 +5,55 @@
 #include <string.h>
 
 /* valiant includes */
-#include "consts.h"
+#include "error.h"
 #include "check.h"
+#include "check_priv.h"
 #include "map.h"
-#include "utils.h"
 
-int
-vt_check_create (vt_check_t **dest, size_t size, const vt_map_list_t *list,
-  const cfg_t *sec)
+vt_check_t *
+vt_check_create (const vt_map_list_t *list, cfg_t *sec, vt_errno_t *err)
 {
   char *title;
-  int ret, err;
+  int ret;
   vt_check_t *check = NULL;
-  vt_map_id_t *maps = NULL;
 
-  if ((title = (char *)cfg_title ((cfg_t *)sec)) == NULL) {
-    vt_error ("%s: check title unavailable", __func__);
-    err = VT_ERR_BADCFG;
+  if ((title = (char *)cfg_title (sec)) == NULL) {
+    vt_set_errno (err, VT_ERR_BADCFG);
+    vt_error ("%s (%d): missing option 'title' for section 'check'");
     goto FAILURE;
   }
-  if ((check = malloc0 (sizeof (vt_check_t))) == NULL ||
-      (size && (check->data = malloc0 (size)) == NULL))
-  {
-    vt_error ("%s: malloc0: %s", __func__, strerror (errno));
-    err = VT_ERR_NOMEM;
+  if (! (check = calloc (1, sizeof (vt_check_t)))) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
     goto FAILURE;
   }
-  if ((check->name = strdup (title)) == NULL) {
-    vt_error ("%s: strdup: %s", __func__, strerror (errno));
-    err = VT_ERR_NOMEM;
+  if (! (check->name = strdup (title))) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): strdup: %s", __func__, __LINE__, strerror (errno));
     goto FAILURE;
   }
-  if ((ret = vt_map_ids_create (&maps, list, sec)) != VT_SUCCESS) {
-    err = ret;
+  if (! (check->maps = vt_map_lineup_create (list, sec, &ret))) {
+    vt_set_errno (err, ret);
     goto FAILURE;
   }
 
-  check->maps = maps;
-  *dest = check;
-  return VT_SUCCESS;
+  return check;
 FAILURE:
   vt_check_destroy (check);
-  return err;
+  return NULL;
 }
 
-void
-vt_check_destroy (vt_check_t *check)
+int
+vt_check_destroy (vt_check_t *check, vt_errno_t **err)
 {
   if (check) {
     if (check->data)
       free (check->data);
+    if (check->maps)
+      free (check->maps);
     free (check);
   }
-}
-
-int
-vt_check_weight (float weight)
-{
-  return (int)(weight*100);
+  return 0;
 }
 
 int
@@ -102,7 +93,7 @@ vt_check_unescape_pattern (const char *s1)
 
   n = strlen (s1);
 
-  if ((s2 = malloc (n+1)) == NULL)
+  if ((s2 = calloc (1, n + 1)) == NULL)
     return NULL;
 
   for (p1=(char*)s1, p2=s2; *p1;) {
@@ -116,3 +107,4 @@ vt_check_unescape_pattern (const char *s1)
 
   return s2;
 }
+

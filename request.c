@@ -1,20 +1,19 @@
 /* system includes */
 #include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <stdlig.h>
 #include <string.h>
-#include <sys/types.h>
 
 /* prefix includes */
-#include "consts.h"
+#include "buf.h"
+#include "error.h"
 #include "request.h"
-#include "utils.h"
 
-int
-vt_request_parse_line (vt_request_t *req, const char *str, size_t len)
+vt_request_t *
+v_request_parse_line (vt_request_t *req, const char *str, size_t len,
+  vt_errno_t *err)
 {
-  char **mbr, *ptr;
-  size_t pos;
+  vt_buf_t *mbr;
+  size_t len, pos;
 
   if (len > 10 && strncmp (str, "helo_name=", 10) == 0) {
     pos = 10;
@@ -35,53 +34,66 @@ vt_request_parse_line (vt_request_t *req, const char *str, size_t len)
     pos = 20;
     mbr = &(req->reverse_client_name);
   } else {
-    return VT_ERR_BADMBR;
+    mbr = NULL;
   }
 
-  if (! (*mbr = strndup (str+pos, len - pos)))
-    return VT_ERR_NOMEM;
+  if (mbr) {
+    if (! vt_buf_ncpy (mbr, str+pos, len-pos)) {
+      *err = VT_ERR_NOMEM;
+      vt_error ("%s (%d): %s", __func__, __LINE__, strerror (ENOMEM));
+      return NULL;
+    }
 
-  if (*mbr == req->sender) {
-    ptr = req->sender;
-    mbr = &(req->sender_domain);
-  } else if (*mbr == req->recipient) {
-    ptr = req->recipient;
-    mbr = &(req->recipient_domain);
-  } else {
-    ptr = NULL;
+    if (mbr == &(req->sender)) {
+      mbr = &(req->sender_domain);
+    } else if (mbr == &(req->recipient)) {
+      mbr = &(req->recipient_domain);
+    } else {
+      mbr = NULL;
+    }
+
+    if (mbr) {
+      for (; pos < len && *(str+pos) != '@'; pos++)
+        ;
+      if (*(str+pos) == '@' && ++pos < len) {
+        if (! vt_buf_ncpy (mbr, str+pos, len-pos)) {
+          *err = VT_ERR_NOMEM;
+          vt_error ("%s (%d): %s", __func__, __LINE__, strerror (ENOMEM));
+          return NULL;
+        }
+      }
+    }
   }
 
-  if (ptr) {
-    for (; *ptr && *ptr != '@'; ptr++)
-      ;
-    if (*ptr == '@')
-      *mbr = ++ptr;
-  }
-
-  return VT_SUCCESS;
+  return req;
 }
 
-#define BUFLEN (32)
+#define BUFLEN (1024)
 #define isterm(c) ((c) == '\n' || (c) == '\r')
 
-int
-vt_request_parse (vt_request_t *req, int fildes)
+vt_request_t *
+vt_request_parse (vt_request_t *req, int fildes, vt_errno_t *err)
 {
   char buf[BUFLEN+1];
-  int err;
   size_t i, j, n, nlft;
   ssize_t nrd;
 
   for (n = 0;;) {
-    if ((nlft = BUFLEN - n) == 0)
-      return VT_ERR_NOBUFS;
+    if ((nlft = BUFLEN - n) == 0) {
+      *err = VT_ERR_NOBUFS;
+      vt_error ("%s (%d): %s", __func__, __LINE__, strerror (ENOBUFS));
+      return NULL;
+    }
 
 again:
     nrd = read (fildes, buf+n, nlft);
     if (nrd < 0) {
       if (errno == EINTR)
         goto again;
-      return VT_ERR_SYS;
+
+      *err = VT_ERR_FATAL;
+      vt_error ("%s (%d): read: %s", __func__, __LINE__, strerror (errno));
+      return NULL;
 
     } else if (nrd > 0) {
       n += nrd;
@@ -91,14 +103,8 @@ again:
           ; /* find line terminator */
 
         if (j < n) {
-          err = vt_request_parse_line (req, buf+i, (j-i));
-          switch (err) {
-            case VT_SUCCESS:
-            case VT_ERR_BADMBR: /* doesn't mean anything in this context */
-              break;
-            default:
-              return err;
-          }
+          if (! vt_request_parse_line (req, buf+i, (j-i), err))
+            return NULL;
 
           for (i=j; i < n &&  isterm (*(buf+i)); i++)
             ; /* forget about line terminator(s) */
@@ -116,132 +122,128 @@ again:
     }
   }
 
-  return VT_SUCCESS;
+  return req;
 }
 
 #undef isterm
 #undef BUFLEN
 
-int
-vt_request_destroy (vt_request_t *req)
+vt_request_t *
+vt_request_create (vt_errno_t *err)
 {
-  if (req) {
-    if (req->helo_name)
-      free (req->helo_name);
-    if (req->sender)
-      free (req->sender);
-    if (req->recipient)
-      free (req->recipient);
-    if (req->client_address)
-      free (req->client_address);
-    if (req->client_name)
-      free (req->client_name);
-    if (req->reverse_client_name)
-      free (req->reverse_client_name);
-    free (req);
+  vt_request_t *req;
+
+  if (! (req = calloc (1, sizeof (vt_request_t)))) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
   }
-  return VT_SUCCESS;
+  return req;
 }
 
-int
-vt_request_mbrtoid (vt_request_mbr_t *id, const char *mbr)
+void
+v_request_destroy (vt_request_t *req)
 {
-  if (mbr) {
-    if (strncasecmp (mbr, "helo_name", 9) == 0)
-      *id = HELO_NAME;
-    else if (strncasecmp (mbr, "sender", 6) == 0)
-      *id = SENDER;
-    else if (strncasecmp (mbr, "sender_domain", 13) == 0)
-      *id = SENDER_DOMAIN;
-    else if (strncasecmp (mbr, "recipient", 9) == 0)
-      *id = RECIPIENT;
-    else if (strncasecmp (mbr, "recipient_domain", 16) == 0)
-      *id = RECIPIENT_DOMAIN;
-    else if (strncasecmp (mbr, "client_address", 14) == 0)
-      *id = CLIENT_ADDRESS;
-    else if (strncasecmp (mbr, "client_name", 11) == 0)
-      *id = CLIENT_NAME;
-    else if (strncasecmp (mbr, "reverse_client_name", 19) == 0)
-      *id = REV_CLIENT_NAME;
+  assert (req);
 
-    return VT_SUCCESS;
-  }
-
-  return VT_ERR_BADMBR;
+  vt_buf_deinit (req->helo_name);
+  vt_buf_deinit (req->sender);
+  vt_buf_deinit (req->sender_domain);
+  vt_buf_deinit (req->recipient);
+  vt_buf_deinit (req->recipient_domain);
+  vt_buf_deinit (req->client_address);
+  vt_buf_deinit (req->client_name);
+  vt_buf_deinit (req->rev_client_name);
+  free (req);
 }
 
-int
-vt_request_mbrbyid (char **mbr, const vt_request_t *req, vt_request_mbr_t id)
+vt_request_member_t
+v_request_mbrtoid (const char *mbr)
 {
-  if (id == HELO_NAME)
-    *mbr = req->helo_name;
-  else if (id == SENDER)
-    *mbr = req->sender;
-  else if (id == SENDER_DOMAIN)
-    *mbr = req->sender_domain;
-  else if (id == RECIPIENT)
-    *mbr = req->recipient;
-  else if (id == RECIPIENT_DOMAIN)
-    *mbr = req->recipient_domain;
-  else if (id == CLIENT_ADDRESS)
-    *mbr = req->client_address;
-  else if (id == CLIENT_NAME)
-    *mbr = req->client_name;
-  else if (id == REV_CLIENT_NAME)
-    *mbr = req->reverse_client_name;
-  else
-    return VT_ERR_BADMBR;
+  if (strncmp (mbr, "helo_name", 9) == 0)
+    return VT_REQUEST_MEMBER_HELO_NAME;
+  else if (strncmp (mbr, "sender", 6) == 0)
+    return VT_REQUEST_MEMBER_SENDER;
+  else if (strncmp (mbr, "sender_domain", 13) == 0)
+    return VT_REQUEST_MEMBER_SENDER_DOMAIN;
+  else if (strncmp (mbr, "recipient", 9) == 0)
+    return VT_REQUEST_MEMBER_RECIPIENT;
+  else if (strncmp (mbr, "recipient_domain", 16) == 0)
+    return VT_REQUEST_MEMBER_RECIPIENT_DOMAIN;
+  else if (strncmp (mbr, "client_address", 14) == 0)
+    return VT_REQUEST_MEMBER_CLIENT_ADDRESS;
+  else if (strncmp (mbr, "client_name", 11) == 0)
+    return VT_REQUEST_MEMBER_CLIENT_NAME;
+  else if (strncmp (mbr, "reverse_client_name", 19) == 0)
+    return VT_REQUEST_MEMBER_REV_CLIENT_NAME;
 
-  return VT_SUCCESS;
+  return VT_REQUEST_MEMBER_NONE;
 }
 
-int
-vt_request_mbrbyname (char **mbr, const vt_request_t *req, const char *str)
+char *
+vt_request_mbrbyid (const vt_request_t *req, vt_request_member_t mbrid)
 {
-  if (strncasecmp (str, "helo_name", 9) == 0)
-    *mbr = req->helo_name;
-  else if (strncasecmp (str, "sender", 6) == 0)
-    *mbr = req->sender;
-  else if (strncasecmp (str, "sender_domain", 13) == 0)
-    *mbr = req->sender_domain;
-  else if (strncasecmp (str, "recipient", 9) == 0)
-    *mbr = req->recipient;
-  else if (strncasecmp (str, "recipient_domain", 16) == 0)
-    *mbr = req->recipient_domain;
-  else if (strncasecmp (str, "client_address", 14) == 0)
-    *mbr = req->client_address;
-  else if (strncasecmp (str, "client_name", 11) == 0)
-    *mbr = req->client_name;
-  else if (strncasecmp (str, "reverse_client_name", 19) == 0)
-    *mbr = req->reverse_client_name;
-  else
-    return VT_ERR_BADMBR;
+  if (mbrid == VT_REQUEST_MEMBER_HELO_NAME)
+    return vt_buf_str (&(req->helo_name));
+  else if (id == VT_REQUEST_MEMBER_SENDER)
+    return vt_buf_str (&(req->sender));
+  else if (id == VT_REQUEST_MEMBER_SENDER_DOMAIN)
+    return vt_buf_str (&(req->sender_domain));
+  else if (id == VT_REQUEST_MEMBER_RECIPIENT)
+    return vt_buf_str (&(req->recipient));
+  else if (id == VT_REQUEST_MEMBER_RECIPIENT_DOMAIN)
+    return vt_buf_str (&(req->recipient_domain));
+  else if (id == VT_REQUEST_MEMBER_CLIENT_ADDRESS)
+    return vt_buf_str (&(req->client_address));
+  else if (id == VT_REQUEST_MEMBER_CLIENT_NAME)
+    return vt_buf_str (&(req->client_name));
+  else if (id == VT_REQUEST_MEMBER_REV_CLIENT_NAME)
+    return vt_buf_str (&(req->rev_client_name));
 
-  return VT_SUCCESS;
+  return NULL;
 }
 
-int
-vt_request_mbrbynamen (char **mbr, const vt_request_t *req, const char *str,
-  size_t len)
+char *
+vt_request_mbrbyname (const vt_request_t *req, const char *str)
+{
+  if (strncmp (str, "helo_name", 9) == 0)
+    return vt_buf_str (&(req->helo_name));
+  else if (strncmp (str, "sender", 6) == 0)
+    return vt_buf_str (&(req->sender));
+  else if (strncmp (str, "sender_domain", 13) == 0)
+    return vt_buf_str (&(req->sender_domain));
+  else if (strncmp (str, "recipient", 9) == 0)
+    return vt_buf_str (&(req->recipient));
+  else if (strncmp (str, "recipient_domain", 16) == 0)
+    return vt_buf_str (&(req->recipient_domain));
+  else if (strncmp (str, "client_address", 14) == 0)
+    return vt_buf_str (&(req->client_address));
+  else if (strncmp (str, "client_name", 11) == 0)
+    return vt_buf_str (&(req->client_name));
+  else if (strncmp (str, "reverse_client_name", 19) == 0)
+    return vt_buf_str (&(req->rev_client_name));
+
+  return NULL;
+}
+
+char *
+vt_request_mbrbynamen (const vt_request_t *req, const char *str, size_t len)
 {
   if (len == 9  && ! strncmp ("helo_name", str, len))
-    *mbr = req->helo_name;
+    return vt_buf_str (&(req->helo_name));
   else if (len == 6  && ! strncmp ("sender", str, len))
-    *mbr = req->sender;
+    return vt_buf_str (&(req->sender));
   else if (len == 13 && ! strncmp ("sender_domain", str, len))
-    *mbr = req->sender_domain;
+    return vt_buf_str (&(req->sender_domain));
   else if (len == 9  && ! strncmp ("recipient", str, len))
-    *mbr = req->recipient;
+    return vt_buf_str (&(req->recipient));
   else if (len == 16 && ! strncmp ("recipient_domain", str, len))
-    *mbr = req->recipient_domain;
+    return vt_buf_str (&(req->recipient_domain));
   else if (len == 14 && ! strncmp ("client_address", str, len))
-    *mbr = req->client_address;
+    return vt_buf_str (&(req->client_address));
   else if (len == 11 && ! strncmp ("client_name", str, len))
-    *mbr = req->client_name;
+    return vt_buf_str (&(req->client_name));
   else if (len == 19 && ! strncmp ("reverse_client_name", str, len))
-    *mbr = req->reverse_client_name;
-  else
-    return VT_ERR_BADMBR;
+    return vt_buf_str (&(req->rev_client_name));
 
-  return VT_SUCCESS;
+  return NULL;
 }

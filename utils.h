@@ -7,7 +7,8 @@
 #include <stdlib.h>
 
 int reverse_inet_addr(char *, char *, socklen_t);
-void *malloc0 (size_t);
+void vt_open_log (const char *, int, int);
+void vt_log (int, const char *, va_list);
 void vt_panic (const char *, ...);
 void vt_fatal (const char *, ...);
 void vt_error (const char *, ...);

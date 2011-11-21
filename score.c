@@ -4,99 +4,86 @@
 #include <string.h>
 
 /* valiant includes */
+#include "error.h"
 #include "score.h"
-#include "utils.h"
 
 vt_score_t *
-vt_score_create (void)
+vt_score_create (vt_errno_t *err)
 {
   int ret;
   vt_score_t *score;
 
-  if ((score = malloc0 (sizeof (vt_score_t))) == NULL) {
-    ret = errno;
-    vt_error ("%s: malloc0: %s", __func__, strerror (errno));
-    goto failure;
+  if (! (score = calloc (1, sizeof (vt_score_t)))) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
+    goto FAILURE;
   }
 
-  if ((ret = pthread_mutex_init (&score->lock, NULL)) != 0) {
-    vt_error ("%s: pthread_mutex_init: %s", __func__, strerror (ret));
-    goto failure;
+  switch ((ret = pthread_mutex_init (&score->lock, NULL))) {
+    case 0:
+      break;
+    case ENOMEM:
+      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_error ("%s (%d): pthread_mutex_init: %s", __func__, __LINE__, strerror (ret));
+      goto FAILURE;
+    default:
+      vt_fatal ("%s (%d): pthread_mutex_init: %s", __func__, __LINE__, strerror (ret));
   }
 
-  if ((ret = pthread_cond_init (&score->signal, NULL)) != 0) {
-    vt_error ("%s: pthread_cond_init: %s", __func__, strerror (ret));
-    goto failure_signal;
+  switch ((ret = pthread_cond_init (&score->signal, NULL))) {
+    case 0:
+      break;
+    case ENOMEM:
+      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_error ("%s (%d): pthread_cond_init: %s", __func__, __LINE__, strerror (ret));
+      goto FAILURE_SIGNAL;
+    default:
+      vt_fatal ("%s (%d): pthread_cond_init: %s", __func__, __LINE__, strerror (ret));
   }
 
   return score;
-
-failure_signal:
+FAILURE_SIGNAL:
   pthread_mutex_destroy (&score->lock);
-failure:
+FAILURE:
   if (score)
     free (score);
-
-  errno = ret;
-
   return NULL;
 }
 
-
-int
+void
 vt_score_destroy (vt_score_t *score)
 {
   int ret;
 
-  if ((ret = pthread_mutex_destroy (&score->lock)) != 0 && ret != EINVAL) {
-    vt_error ("%s: pthread_mutex_destroy: %s", __func__, strerror (ret));
-    errno = ret;
-    return -1;
-  }
-
-  if ((ret = pthread_cond_destroy (&score->signal)) != 0 && ret != EINVAL) {
-    vt_error ("%s: pthread_cond_destroy: %s", __func__, strerror (ret));
-    errno = ret;
-    return -1;
-  }
-
+  if ((ret = pthread_mutex_destroy (&score->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_destroy: %s", __func__, __LINE__, strerror (ret));
+  if ((ret = pthread_cond_destroy (&score->signal)) != 0)
+    vt_fatal ("%s (%d): pthread_cond_destroy: %s", __func__, __LINE__, strerror (ret));
   free (score);
-
-  return 0;
 }
 
-
-int
+void
 vt_score_lock (vt_score_t *score)
 {
   int ret;
 
-  if ((ret = pthread_mutex_lock (&score->lock)) != 0) {
-    vt_error ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
-    errno = ret;
-    return -1;
-  }
+  if ((ret = pthread_mutex_lock (&score->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_lock: %s", __func__, __LINE__, strerror (ret));
 
   score->writers++;
 
-  if ((ret = pthread_mutex_unlock (&score->lock)) != 0) {
-    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
-  }
-
-  return 0;
+  if ((ret = pthread_mutex_unlock (&score->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_unlock: %s", __func__, __LINE__, strerror (ret));
 }
 
 
-int
+void
 vt_score_unlock (vt_score_t *score)
 {
   int ret, signal=0;
 
-  if ((ret = pthread_mutex_lock (&score->lock)) != 0) {
-    vt_error ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
-    errno = ret;
-    return -1;
-  }
+  if ((ret = pthread_mutex_lock (&score->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_lock: %s", __func__, __LINE__, strerror (ret));
 
   if (score->writers > 0)
     score->writers--;
@@ -104,15 +91,13 @@ vt_score_unlock (vt_score_t *score)
     signal = 1;
 
   if ((ret = pthread_mutex_unlock (&score->lock)) != 0)
-    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+    vt_fatal ("%s (%d): pthread_mutex_unlock: %s", __func__, __LINE__, strerror (ret));
   if (signal != 0 && (ret = pthread_cond_signal (&score->signal)) != 0)
-    vt_panic ("%s: pthread_cond_signal: %s", __func__, strerror (ret));
-
-  return 0;
+    vt_fatal ("%s (%d): pthread_cond_signal: %s", __func__, __LINE__, strerror (ret));
 }
 
-int
-vt_score_update (vt_score_t *score, unsigned int id, int points)
+void
+vt_score_update (vt_score_t *score, unsigned int pos, int points)
 {
   /* NOTE: Since this function is called many times throughout the application,
      I thought I would optimize it by leaving out the mutexes. If there's
@@ -121,29 +106,23 @@ vt_score_update (vt_score_t *score, unsigned int id, int points)
   /* NOTE: Since every check has a unique identifier, it shouldn't be necessary
      to protect the results with a memory barrier. Again if this assumption is
      false, please notify me. */
-  score->cntrs[id] = points ? 1 : 0;
-
-  return 0;
+  score->cntrs[pos] = points ? 1 : 0;
 }
 
-int
+void
 vt_score_wait (vt_score_t *score)
 {
   int ret;
 
-  if ((ret = pthread_mutex_lock (&score->lock)) != 0) {
-    vt_error ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
-    errno = ret;
-    return -1;
-  }
+  if ((ret = pthread_mutex_lock (&score->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_lock: %s", __func__, __LINE__, strerror (ret));
 
   while (score->writers > 0) {
     if ((ret = pthread_cond_wait (&score->signal, &score->lock)) != 0)
-      vt_panic ("%s: pthread_cond_wait: %s", __func__, strerror (ret));
+      vt_fatal ("%s (%d): pthread_cond_wait: %s", __func__, __LINE__, strerror (ret));
   }
 
   if ((ret = pthread_mutex_unlock (&score->lock)) != 0)
-    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
-
-  return 0;
+    vt_panic ("%s (%d): pthread_mutex_unlock: %s", __func__, __LINE__, strerror (ret));
 }
+

@@ -7,148 +7,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define SYSLOG_NAMES 1 /* needed for facilitynames and prioritynames */
-#include <syslog.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 /* valiant includes */
-#include "settings.h"
+#include "error.h"
 #include "utils.h"
-
-static int vt_facility = -1;
-static int vt_priority = LOG_DEBUG;
-
-void *
-malloc0 (size_t nbytes)
-{
-  void *ptr;
-
-  if ((ptr = malloc (nbytes)))
-    memset (ptr, 0, nbytes);
-
-  return ptr;
-}
-
-int
-vt_log_factility (const char *name)
-{
-  CODE *slc;
-
-  for (slc = facilitynames; slc->c_name; slc++) {
-    if (strcmp (name, slc->c_name) == 0)
-      return slc->c_val;
-  }
-
-  return -1;
-}
-
-int
-vt_log_priority (const char *name)
-{
-  CODE *slc;
-
-  for (slc = prioritynames; slc->c_name; slc++) {
-    if (strcmp (name, slc->c_name) == 0)
-      return slc->c_val;
-  }
-
-  return -1;
-}
-
-void
-vt_log_open (int facility, int level)
-{
-  openlog ("valiant", LOG_PID, facility);
-  vt_facility = facility;
-  vt_priority = level;
-}
-
-void
-vt_log (int prio, const char *fmt, va_list ap)
-{
-  //fprintf (stderr, "%d, %d\n", prio, vt_priority);
-  if (prio > vt_priority)
-    return;
-
-  if (vt_facility >= 0) {
-    syslog (LOG_MAKEPRI (vt_facility, prio), fmt, ap);
-    return;
-  }
-
-  if (prio == LOG_EMERG ||
-      prio == LOG_ALERT ||
-      prio == LOG_CRIT  ||
-      prio == LOG_WARNING)
-  {
-    vfprintf (stderr, fmt, ap);
-    fprintf (stderr, "\n");
-  } else {
-    vfprintf (stdout, fmt, ap);
-    fprintf (stdout, "\n");
-  }
-}
-
-void
-vt_panic (const char *fmt, ...)
-{
-  va_list ap;
-
-  va_start (ap, fmt);
-  vt_log (LOG_EMERG, fmt, ap);
-  va_end (ap);
-
-  exit (1);
-}
-
-void
-vt_fatal (const char *fmt, ...)
-{
-  va_list ap;
-
-  va_start (ap, fmt);
-  vt_log (LOG_CRIT, fmt, ap);
-  va_end (ap);
-
-  exit (1);
-}
-
-void
-vt_error (const char *fmt, ...)
-{
-  va_list ap;
-  va_start (ap, fmt);
-  vt_log (LOG_ERR, fmt, ap);
-  va_end (ap);
-}
-
-void
-vt_warning (const char *fmt, ...)
-{
-  va_list ap;
-  va_start (ap, fmt);
-  vt_log (LOG_WARNING, fmt, ap);
-  va_end (ap);
-}
-
-void
-vt_info (const char *fmt, ...)
-{
-  va_list ap;
-  va_start (ap, fmt);
-  vt_log (LOG_INFO, fmt, ap);
-  va_end (ap);
-}
-
-void
-vt_debug (const char *fmt, ...)
-{
-  va_list ap;
-  va_start (ap, fmt);
-  vt_log (LOG_DEBUG, fmt, ap);
-  va_end (ap);
-}
 
 /*
  * reverse_inet_addr - reverse ipaddress string for dnsbl query
@@ -319,7 +184,7 @@ daemonize (vt_context_t *ctx)
   } else if (unlink (ctx->pid_file) < 0) {
     vt_fatal ("cannot remove %s: %s", ctx->pid_file, strerror (errno));
   }
-fprintf (stderr, "here!!!!\n");
+//fprintf (stderr, "here!!!!\n");
   /* evertyhing should be set up to daemonize */
 
   if ((pid = fork ()) < 0) /* error */
@@ -353,58 +218,4 @@ fprintf (stderr, "here!!!!\n");
       fderr != STDERR_FILENO)
     vt_fatal ("unexpected file descriptors %d %d %d", fdin, fdout, fderr);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

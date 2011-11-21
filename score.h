@@ -16,13 +16,11 @@ struct vt_score_struct {
 };
 
 vt_score_t *vt_score_create (void);
-int vt_score_destroy (vt_score_t *);
-
-int vt_score_lock (vt_score_t *);
-int vt_score_unlock (vt_score_t *);
-
-int vt_score_update (vt_score_t *, unsigned int, int);
-int vt_score_wait (vt_score_t *);
+void vt_score_destroy (vt_score_t *);
+void vt_score_lock (vt_score_t *);
+void vt_score_unlock (vt_score_t *);
+void vt_score_update (vt_score_t *, unsigned int, int);
+void vt_score_wait (vt_score_t *);
 
 #endif
 

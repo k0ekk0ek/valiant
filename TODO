@@ -47,6 +47,12 @@ v 27. Make API changes to support new statistics gathering method.
   36. Implement assertions.
   37. Allocating the struct outside the function, and using a seperate init
       function is the right way to go.
+  38. We might be able to have fixed sized buffers for the request structure,
+      this would eliminate of a lot of system calls, be less error prone and
+      speed up the program.
+  39. It's probably a good idea to switch to using GLib. This will make a lot
+      of code unnecessary (e.g. thread_pool.x and slist.x) plus provide a lot
+      of functions for dealing with idn etc.
   X.  Implement vt_map_pgsql_t.
   X.  Document code.
   X.  Implement IPv6 support for DNSBL checks.

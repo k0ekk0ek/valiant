@@ -1,71 +1,69 @@
 /* system includes */
 #include <errno.h>
-#include <stdbool.h>
 #include <string.h>
 
 /* valiant includes */
+#include "error.h"
 #include "slist.h"
 #include "stage.h"
-#include "utils.h"
-#include "consts.h"
 
-int
-vt_stage_create (vt_stage_t **dest, const vt_map_list_t *list, const cfg_t *sec)
+vt_stage_t *
+vt_stage_init (const vt_map_list_t *list, cfg_t *sec, vt_errno_t *err)
 {
-  int err, ret;
-  vt_map_id_t *maps = NULL;
-  vt_stage_t *stage = NULL;
+  int ret = 0;
+  vt_stage_t *stage;
 
-  if ((stage = malloc0 (sizeof (vt_stage_t))) == NULL) {
-    return VT_ERR_NOMEM;
+  if (! (stage = calloc (1, sizeof (vt_stage_t)))) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
+    return NULL;
   }
-  if ((ret = vt_map_ids_create (&maps, list, sec)) != VT_SUCCESS) {
-    free (stage);
-    return err;
+  if (! (stage->maps = vt_map_lineup_create (list, sec, &ret)) && ret != 0) {
+    vt_set_errno (err, ret);
+    vt_stage_destroy (stage, 0);
+    return NULL;
   }
 
-  stage->maps = maps;
-  *dest = stage;
-  return VT_SUCCESS;
+  return stage;
 }
 
 void
-vt_stage_destroy (vt_stage_t *stage, bool checks)
+vt_stage_destroy (vt_stage_t *stage, int recurse)
 {
   // IMPLEMENT
 }
 
 int
-vt_stage_set_check (vt_stage_t *stage, const vt_check_t *check)
+vt_stage_add_check (vt_stage_t *stage, const vt_check_t *check, vt_errno_t *err)
 {
   vt_slist_t *cur, *next;
   vt_check_t *p;
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+
   /* avoid duplicates */
   for (cur=stage->checks; cur; cur=cur->next) {
-
     p = (vt_check_t *)cur->data;
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+
     if (strcmp (check->name, p->name) == 0) {
+      vt_set_errno (err, VT_ERR_ALREADY);
       vt_error ("%s: check %s already included", __func__, check->name);
-      return VT_ERR_ALREADY;
+      return -1;
     }
   }
-//fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+
   if ((next = vt_slist_append (stage->checks, check)) == NULL) {
+    vt_set_errno (err, VT_ERR_NOMEM);
     vt_error ("%s: slist_append: %s", __func__, strerror (errno));
-    return VT_ERR_NOMEM;
+    return -1;
   }
 
-  if (stage->checks == NULL) {
+  if (stage->checks == NULL)
     stage->checks = next;
-  }
 
-  return VT_SUCCESS;
+  return 0;
 }
 
-int
-vt_stage_lineup (vt_stage_t *stage)
+void
+vt_stage_update (vt_stage_t *stage)
 {
   vt_check_t *check;
   vt_slist_t *entry;
@@ -85,6 +83,4 @@ vt_stage_lineup (vt_stage_t *stage)
 
   stage->max_weight = max;
   stage->min_weight = min;
-
-  return VT_SUCCESS;
 }

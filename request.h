@@ -1,39 +1,45 @@
 #ifndef VT_REQUEST_H_INCLUDED
-#define VT_REQUEST_H_INCLUDED
+#define VT_REQUEST_H_INCLUDED 1
 
 /* system includes */
 #include <sys/types.h>
 
-typedef enum vt_request_mbr_enum vt_request_mbr_t;
+/* valiant includes */
+#include "buf.h"
 
-enum vt_request_mbr_enum {
-  HELO_NAME,
-  SENDER,
-  SENDER_DOMAIN,
-  RECIPIENT,
-  RECIPIENT_DOMAIN,
-  CLIENT_ADDRESS,
-  CLIENT_NAME,
-  REV_CLIENT_NAME
+typedef enum _vt_request_member vt_request_member_t;
+
+enum _vt_request_member {
+  VT_REQUEST_MEMBER_NONE,
+  VT_REQUEST_MEMBER_HELO_NAME,
+  VT_REQUEST_MEMBER_SENDER,
+  VT_REQUEST_MEMBER_SENDER_DOMAIN,
+  VT_REQUEST_MEMBER_RECIPIENT,
+  VT_REQUEST_MEMBER_RECIPIENT_DOMAIN,
+  VT_REQUEST_MEMBER_CLIENT_ADDRESS,
+  VT_REQUEST_MEMBER_CLIENT_NAME,
+  VT_REQUEST_MEMBER_REV_CLIENT_NAME
 };
 
-typedef struct vt_request_struct vt_request_t;
+/* By using vt_buf_t buffers instead of char pointers we hopefully cut down the
+   number of mallocs significantly. */
+typedef struct _vt_request vt_request_t;
 
-struct vt_request_struct {
-  char *helo_name;
-  char *sender;
-  char *sender_domain; /* pointer to first char after @ in sender */
-  char *recipient;
-  char *recipient_domain; /* pointer to first char after @ in recipient */
-  char *client_address;
-  char *client_name;
-  char *reverse_client_name;
+struct _vt_request {
+  vt_buf_t helo_name;
+  vt_buf_t sender;
+  vt_buf_t sender_domain;
+  vt_buf_t recipient;
+  vt_buf_t recipient_domain;
+  vt_buf_t client_address;
+  vt_buf_t client_name;
+  vt_buf_t rev_client_name;
 };
 
-int vt_request_parse (vt_request_t *, int);
-int vt_request_mbrtoid (vt_request_mbr_t *, const char *);
-int vt_request_mbrbyid (char **, const vt_request_t *, vt_request_mbr_t);
-int vt_request_mbrbyname (char **, const vt_request_t *, const char *);
-int vt_request_mbrbynamen (char **, const vt_request_t *, const char *, size_t);
+vt_request_t *vt_request_parse (vt_request_t *, int, vt_errno_t *);
+vt_request_member_ vt_request_mbrtoid (const char *);
+char *vt_request_mbrbyid (const vt_request_t *, vt_request_member_t);
+char *vt_request_mbrbyname (const vt_request_t *, const char *);
+char *vt_request_mbrbynamen (const vt_request_t *, const char *, size_t);
 
 #endif

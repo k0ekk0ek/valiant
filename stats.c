@@ -6,53 +6,58 @@
 #include <time.h>
 
 /* valiant includes */
-#include "consts.h"
+#include "error.h"
 #include "score.h"
 #include "stats.h"
-#include "utils.h"
 
-int
-vt_stats_create (vt_stats_t **dest)
+vt_stats_t *
+vt_stats_create (vt_errno_t *, vt_errno_t *err)
 {
-  int err, ret;
+  int ret;
   vt_stats_t *stats;
 
-  if (! (stats = malloc0 (sizeof (vt_stats_t)))) {
-    vt_error ("%s: malloc0: %s", __func__, strerror (errno));
-    return VT_ERR_NOMEM;
+  if (! (stats = calloc (1, sizeof (vt_stats_t)))) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
+    return NULL;
   }
 
   stats->ctime = time (NULL);
   stats->mtime = stats->ctime;
 
-  if ((ret = pthread_mutex_init (&stats->lock, NULL)) != 0) {
-    vt_error ("%s: pthread_mutex_init: %s", __func__, strerror (ret));
-    if (ret == ENOMEM)
-      err = VT_ERR_NOMEM;
-    else
-      err = VT_ERR_SYS;
-    goto FAILURE_MUTEX_INIT;
+  switch ((ret = pthread_mutex_init (&stats->lock, NULL))) {
+    case 0:
+      break;
+    case ENOMEM:
+      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_error ("%s (%d): pthread_mutex_init: %s", __func__, __LINE__,
+        strerror (ret));
+      goto FAILURE_MUTEX_INIT;
+    default:
+      vt_fatal ("%s (%d): pthread_mutex_init: %s", __func__, __LINE__,
+        strerror (ret));
   }
 
-  if ((ret = pthread_cond_init (&stats->signal, NULL)) != 0) {
-    vt_error ("%s: pthread_cond_init: %s", __func__, strerror (ret));
-    if (ret == ENOMEM)
-      err = VT_ERR_NOMEM;
-    else
-      err = VT_ERR_SYS;
-    goto FAILURE_COND_INIT;
+  switch ((ret = pthread_cond_init (&stats->signal, NULL))) {
+    case 0:
+      break;
+    case ENOMEM:
+      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_error ("%s (%d): pthread_cond_init: %s", __func__, __LINE__,
+        strerror (ret));
+      goto FAILURE_COND_INIT;
+    default:
+      vt_fatal ("%s (%d): pthread_cond_init: %s", __func__, __LINE__,
+        strerror (ret));
   }
 
-  *dest = stats;
   return VT_SUCCESS;
-
 FAILURE_COND_INIT:
-  /* don't care about return value here */
   (void)pthread_mutex_destroy (&stats->lock);
 FAILURE_MUTEX_INIT:
   if (stats)
     free (stats);
-  return err;
+  return NULL;
 }
 
 int
@@ -62,69 +67,68 @@ vt_stats_destroy (vt_stats_t *stats)
 }
 
 int
-vt_stats_add_cntr (unsigned int *id, vt_stats_t *stats, const char *name)
+vt_stats_add_cntr (vt_stats_t *stats, const char *name, vt_errno_t *err)
 {
-  int err, ret;
+  int pos, ret;
   unsigned int tmp;
   vt_stats_cntr_t *cntr, **cntrs;
 
-  if ((ret = vt_stats_get_cntr_id (&tmp, stats, name)) == VT_SUCCESS) {
-    *id = tmp;
-    return VT_SUCCESS;
-  }
+  if ((pos = vt_stats_get_cntr_pos (&tmp, stats, name)) >= 0)
+    return pos;
 
   cntrs = NULL;
-  if (! (cntr = malloc0 (sizeof (vt_stats_cntr_t))) ||
+  if (! (cntr = calloc (1, sizeof (vt_stats_cntr_t))) ||
       ! (cntr->name = strdup (name)) ||
       ! (cntrs = realloc (stats->cntrs, sizeof (vt_stats_cntr_t *) * (stats->ncntrs + 2))))
   {
+    vt_set_errno (err, VT_ERR_NOMEM);
     vt_error ("%s: %s", __func__, strerror (errno));
-    err = VT_ERR_NOMEM;
     goto FAILURE;
   }
+
   cntr->len = strlen (cntr->name);
-  *id = stats->ncntrs;
+  pos = stats->ncntrs;
   cntrs[stats->ncntrs++] = cntr;
   cntrs[stats->ncntrs] = NULL;
   stats->cntrs = cntrs;
 
-  return VT_SUCCESS;
+  return pos;
 FAILURE:
-  if (cntr)
+  if (cntr) {
+    if (cntr->name)
+      free (cntr->name);
     free (cntr);
-  return err;
+  }
+  return -1;
 }
 
 int
-vt_stats_get_cntr_id (unsigned int *id, const vt_stats_t *stats,
-  const char *name)
+vt_stats_get_cntr_pos (const vt_stats_t *stats, const char *name)
 {
   int err, i;
 
-  if (stats->cntrs) {
-    for (i=0; i < stats->ncntrs; i++) {
-      if (strcmp (name, (stats->cntrs)[i]->name) == 0) {
-        *id = i;
-        return VT_SUCCESS;
-      }
-    }
+  for (i=0; i < stats->ncntrs; i++) {
+    if (strcmp (name, (stats->cntrs)[i]->name) == 0)
+      return i;
   }
-  return VT_ERR_INVAL;
+  return -1;
 }
 
 void
 vt_stats_update (vt_stats_t *stats, const vt_score_t *score)
 {
   int ret;
-  unsigned int i;
+  int i;
 
   if ((ret = pthread_mutex_lock (&stats->lock)) != 0)
-    vt_fatal ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+    vt_fatal ("%s (%d): pthread_mutex_lock: %s", __func__, __LINE__,
+      strerror (ret));
   /* NOTE: We're only supposed to reach this point after all checks are done. I
      didn't implement locking of the score here because of that. I know these
      types of assumptions are risky. */
   if (stats->ncntrs != score->ncntrs)
-    vt_panic ("%s: array sizes do not match, this is a serious bug", __func__);
+    vt_panic ("%s (%d): number of counters in stats and score do not match",
+      __func__, __LINE__);
 
   stats->nreqs++;
   for (i=0; i < stats->ncntrs; i++) {
@@ -133,7 +137,8 @@ vt_stats_update (vt_stats_t *stats, const vt_score_t *score)
   }
 
   if (pthread_mutex_unlock (&stats->lock) != 0)
-    vt_fatal ("%s: pthread_mutex_lock: %s", __func__, strerror (errno));
+    vt_fatal ("%s (%d): pthread_mutex_lock: %s", __func__, __LINE__,
+      strerror (errno));
 }
 
 #define SIZE_MAX_CHARS ((SIZE_MAX / 10) + 2)
@@ -141,19 +146,19 @@ vt_stats_update (vt_stats_t *stats, const vt_score_t *score)
 #define FMT_NUM_CHARS (21)
 
 int
-vt_stats_print (vt_stats_t *stats)
+vt_stats_print (vt_stats_t *stats, vt_errno_t *err)
 {
-  char *str, *ptr;
-  int err;
-  size_t len;
+  char *ptr, *str = NULL;
+  int i;
+  int ret, res = 0;
   ssize_t max, num;
   time_t ctime, utime;
   unsigned long nreqs;
   unsigned int i, ncntrs;
   vt_stats_cntr_t *cntr;
 
-  if (pthread_mutex_lock (&stats->lock) != 0)
-    vt_fatal ("%s: pthread_mutex_lock: %s", __func__, strerror (errno));
+  if ((ret = pthread_mutex_lock (&stats->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_lock: %s", __func__, __LINE__, strerror (ret));
 
   stats->mtime = time (NULL);
   ctime = stats->ctime;
@@ -167,38 +172,38 @@ vt_stats_print (vt_stats_t *stats)
 
   max += (SIZE_MAX_CHARS + FMT_NUM_CHARS + 1);
   if (max > (ssize_t)(SIZE_MAX / ncntrs)) {
-    vt_error ("%s: not enough memory to print statistics", __func__);
-    err = VT_ERR_NOMEM;
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): not enough memory to print statistics", __func__, __LINE__);
     goto UNLOCK;
   }
 
-  len = max * ncntrs;
   ptr = NULL;
-  if ((str = malloc0 (len)) == NULL) {
-    vt_error ("%s: malloc0: %s", __func__, strerror (errno));
-    err = VT_ERR_NOMEM;
+  if ((str = calloc (ncntrs, max)) == NULL) {
+    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
     goto UNLOCK;
   }
 
   for (i=0, ptr=str; i < ncntrs; i++, ptr+=max) {
     cntr = (stats->cntrs)[i];
-    num = snprintf (ptr, max, FMT, max, cntr->name, cntr->hits);
-    if (num < 0) {
-      vt_error ("%s: malloc0: %s", __func__, strerror (errno));
-      if (errno == ENOMEM)
-        err = VT_ERR_NOMEM;
-      else
-        err = VT_ERR_SYS;
-      goto UNLOCK;
+    if ((num = snprintf (ptr, max, FMT, max, cntr->name, cntr->hits)) < 0) {
+      if (errno == ENOMEM) {
+        vt_set_errno (err, VT_ERR_NOMEM);
+        vt_error ("%s (%d): snprintf: %s", __func__, __LINE__, strerror (errno));
+        goto UNLOCK;
+      }
+      vt_fatal ("%s (%d): snprintf: %s", __func__, __LINE__, strerror (errno));
     }
     cntr->hits = 0; /* reset counter */
   }
 
-UNLOCK:
-  if (pthread_mutex_unlock (&stats->lock) != 0)
-    vt_fatal ("%s: pthread_mutex_unlock: %s", __func__, strerror (errno));
+  res = 1;
 
-  if (err == VT_SUCCESS) {
+UNLOCK:
+  if ((ret = pthread_mutex_unlock (&stats->lock)) != 0)
+    vt_fatal ("%s (%d): pthread_mutex_unlock: %s", __func__, __LINE__, strerror (ret));
+
+  if (res) {
     vt_info ("running for %j seconds since %s",
       utime, asctime (localtime (&ctime)));
     vt_info ("number of requests %d", nreqs);
@@ -206,68 +211,34 @@ UNLOCK:
       vt_info ("%s", ptr);
     }
   }
-  if (str) {
-    free (str);
-  }
 
-  return err;
+  if (str)
+    free (str);
+
+  return res ? 0 : -1;
 }
 
 #undef SIZE_MAX_CHARS
 #undef FMT
 #undef FMT_NUM_CHARS
 
-int
-vt_stats_lock (vt_stats_t *stats)
-{
-  int err, ret;
-
-  if ((ret = pthread_mutex_lock (&stats->lock)) != 0) {
-    vt_error ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
-  return VT_SUCCESS;
-}
-
-int
-vt_stats_unlock (vt_stats_t *stats)
-{
-  return 0;
-}
-
-int
-vt_stats_print_cycle (vt_stats_t *stats, time_t cycle)
-{
-  int err, ret;
-
-  if ((err = pthread_mutex_lock (&stats->lock)) != VT_SUCCESS) {
-    return err;
-  }
-
-  stats->cycle = cycle;
-
-  if ((err = pthread_mutex_unlock (&stats->lock)) != VT_SUCCESS) {
-    return err;
-  }
-  if ((ret = pthread_cond_signal (&stats->signal)) != 0) {
-    vt_error ("%s: pthread_cond_signal: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
-
-  return VT_SUCCESS;
-}
-
-// do stuff, create new thread in vt_stats_printer and let it execute
+//int
+//vt_stats_print_cycle (vt_stats_t *stats, time_t cycle)
+//{
+//  IMPLEMENT
+//}
+//
 //void
 //vt_stats_worker (void *arg)
 //{
-//  // IMPLEMENT
+//  IMPLEMENT
+//  Create new thread in vt_stats_printer and let it execute this function. I
+//  will then print statistics at given intervals using a timed wait.
 //}
 //
 //int
 //vt_stats_printer (vt_stats_t *stats)
 //{
-//  // thread that prints statistics at given intervals etc, etc
-//  // does a timed wait etc
-//  // IMPLEMENT, just not needed now!
+//  IMPLEMENT
 //}
+
