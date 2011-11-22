@@ -1,11 +1,9 @@
 #ifndef VT_REQUEST_H_INCLUDED
 #define VT_REQUEST_H_INCLUDED 1
 
-/* system includes */
-#include <sys/types.h>
-
 /* valiant includes */
 #include "buf.h"
+#include "error.h"
 
 typedef enum _vt_request_member vt_request_member_t;
 
@@ -36,8 +34,8 @@ struct _vt_request {
   vt_buf_t rev_client_name;
 };
 
-vt_request_t *vt_request_parse (vt_request_t *, int, vt_errno_t *);
-vt_request_member_ vt_request_mbrtoid (const char *);
+vt_request_t *vt_request_parse (vt_request_t *, int, vt_error_t *);
+vt_request_member_t vt_request_mbrtoid (const char *);
 char *vt_request_mbrbyid (const vt_request_t *, vt_request_member_t);
 char *vt_request_mbrbyname (const vt_request_t *, const char *);
 char *vt_request_mbrbynamen (const vt_request_t *, const char *, size_t);

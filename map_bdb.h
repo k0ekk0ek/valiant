@@ -1,5 +1,5 @@
 #ifndef VT_MAP_BDB_H_INCLUDED
-#define VT_MAP_BDB_H_INCLUDED
+#define VT_MAP_BDB_H_INCLUDED 1
 
 /* valiant includes */
 #include "map.h"

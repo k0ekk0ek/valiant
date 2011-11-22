@@ -39,20 +39,15 @@ v 27. Make API changes to support new statistics gathering method.
   30. Make it a daemon.
   31. Design the context to contain the stages, maps, checks etc.
   32. Add posibility to add default result to map, per check.
-  33. Stage should know how much the following stages can influence the score
+v 33. Stage should know how much the following stages can influence the score
       and make decisions based on that knowledge.
-  34. Implement temporary error codes, this should allow us to not reject all
+v 34. Implement temporary error codes, this should allow us to not reject all
       incoming messages when an error occurs.
-  35. Introduce small API changes, use pthread_* functions as an example.
+v 35. Introduce small API changes, use pthread_* functions as an example.
   36. Implement assertions.
-  37. Allocating the struct outside the function, and using a seperate init
-      function is the right way to go.
-  38. We might be able to have fixed sized buffers for the request structure,
+v 38. We might be able to have fixed sized buffers for the request structure,
       this would eliminate of a lot of system calls, be less error prone and
       speed up the program.
-  39. It's probably a good idea to switch to using GLib. This will make a lot
-      of code unnecessary (e.g. thread_pool.x and slist.x) plus provide a lot
-      of functions for dealing with idn etc.
   X.  Implement vt_map_pgsql_t.
   X.  Document code.
   X.  Implement IPv6 support for DNSBL checks.

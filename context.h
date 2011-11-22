@@ -1,13 +1,10 @@
 #ifndef VT_CONTEXT_H_INCLUDED
 #define VT_CONTEXT_H_INCLUDED 1
 
-/* system includes */
-#include <confuse.h>
-
 /* valiant includes */
 #include "check.h"
-#include "error.h"
-#include "map.h"
+#include "slist.h"
+#include "stats.h"
 
 typedef struct _vt_context vt_context_t;
 
@@ -29,11 +26,11 @@ struct _vt_context {
   char *error_resp; /* what to respond with, in case we encounter an error */
 
   vt_slist_t *stages;
-  vt_stats_t *stats
+  vt_stats_t *stats;
   vt_map_list_t *maps;
 };
 
-vt_context_t *vt_context_create (vt_context_t *, cfg_t *, vt_errno_t *);
-int vt_context_destroy (vt_context_t *, vt_errno_t *);
+vt_context_t *vt_context_create (vt_context_t *, cfg_t *, vt_error_t *);
+int vt_context_destroy (vt_context_t *, vt_error_t *);
 
 #endif

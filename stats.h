@@ -30,12 +30,12 @@ struct vt_stats_struct {
   pthread_cond_t signal;
 };
 
-vt_stats_t *vt_stats_create (vt_errno_t *);
-int vt_stats_destroy (vt_stats_t *, vt_errno_t *);
-int vt_stats_add_cntr (vt_stats_t *, const char *, vt_errno_t *);
+vt_stats_t *vt_stats_create (vt_error_t *);
+int vt_stats_destroy (vt_stats_t *, vt_error_t *);
+int vt_stats_add_cntr (vt_stats_t *, const char *, vt_error_t *);
 int vt_stats_get_cntr_pos (const vt_stats_t *, const char *);
 void vt_stats_update (vt_stats_t *, const vt_score_t *);
-int vt_stats_print (vt_stats_t *);
+int vt_stats_print (vt_stats_t *, vt_error_t *);
 // FIXME: IMPLEMENT
 //int vt_stats_print_cycle (vt_stats_t *, time_t);
 //void vt_stats_printer (vt_stats_t *);

@@ -5,46 +5,36 @@
 #include <string.h>
 
 /* valiant includes */
-#include "error.h"
-#include "check.h"
 #include "check_priv.h"
-#include "map.h"
+#include "conf.h"
 
 vt_check_t *
-vt_check_create (const vt_map_list_t *list, cfg_t *sec, vt_errno_t *err)
+vt_check_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
 {
-  char *title;
-  int ret;
-  vt_check_t *check = NULL;
+  vt_check_t *check;
 
-  if ((title = (char *)cfg_title (sec)) == NULL) {
-    vt_set_errno (err, VT_ERR_BADCFG);
-    vt_error ("%s (%d): missing option 'title' for section 'check'");
-    goto FAILURE;
-  }
   if (! (check = calloc (1, sizeof (vt_check_t)))) {
-    vt_set_errno (err, VT_ERR_NOMEM);
-    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
     goto FAILURE;
   }
-  if (! (check->name = strdup (title))) {
-    vt_set_errno (err, VT_ERR_NOMEM);
-    vt_error ("%s (%d): strdup: %s", __func__, __LINE__, strerror (errno));
+  if (! (check->name = vt_cfg_titledup (sec))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: strdup: %s", __func__, strerror (errno));
     goto FAILURE;
   }
-  if (! (check->maps = vt_map_lineup_create (list, sec, &ret))) {
-    vt_set_errno (err, ret);
+
+  if (! (check->maps = vt_map_lineup_create (list, sec, err)))
     goto FAILURE;
-  }
 
   return check;
 FAILURE:
-  vt_check_destroy (check);
+  (void)vt_check_destroy (check, NULL);
   return NULL;
 }
 
 int
-vt_check_destroy (vt_check_t *check, vt_errno_t **err)
+vt_check_destroy (vt_check_t *check, vt_error_t *err)
 {
   if (check) {
     if (check->data)
@@ -107,4 +97,3 @@ vt_check_unescape_pattern (const char *s1)
 
   return s2;
 }
-

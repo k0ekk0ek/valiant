@@ -1,51 +1,27 @@
 /* system includes */
-#include <arpa/inet.h>
-#include <confuse.h>
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
-#include <spf2/spf.h>
-#include <spf2/spf_dns.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <time.h>
 
 /* valiant includes */
+#include "conf.h"
 #include "rbl.h"
 #include "slist.h"
-#include "consts.h"
 
-/*
- * type dnsbl {
- *	 max_idle_threads = 10
- *	 max_threads = 200
- *   min_threads = 10
- * }
- *
- * check spamhaus {
- *   zone = zen.spamhaus.org
- *	 ipv4 = true
- *   ipv6 = false
- *	 weight = 1.0
- *   in 127.0.0.1/32 {
- *     weight = 2.0
- *   }
- * }
- */
+typedef struct _vt_rbl_weight vt_rbl_weight_t;
 
-typedef struct vt_rbl_weight_struct vt_rbl_weight_t;
-
-struct vt_rbl_weight_struct {
+struct _vt_rbl_weight {
   unsigned long network;
   unsigned long netmask;
   int weight;
 };
 
 /* prototypes */
-int vt_rbl_skip (int *, vt_rbl_t *);
-int vt_rbl_error (vt_rbl_t *);
-vt_rbl_weight_t *vt_rbl_weight_create (const char *, float );
+void vt_rbl_error (vt_rbl_t *);
+vt_rbl_weight_t *vt_rbl_weight_create (const char *, float, vt_error_t *);
 int vt_rbl_weight_destroy (void *);
 int vt_rbl_weight_sort (void *, void *);
 int vt_rbl_weight (vt_rbl_t *, int);
@@ -57,8 +33,8 @@ int vt_rbl_weight (vt_rbl_t *, int);
 #define BACK_OFF_TIME HALF_HOUR_IN_SECONDS /* half hour in seconds */
 #define MAX_BACK_OFF_TIME (86400) /* 1 day in seconds */
 
-int
-vt_rbl_create (vt_rbl_t **dest, const cfg_t *sec)
+vt_rbl_t *
+vt_rbl_create (cfg_t *sec, vt_error_t *err)
 {
   cfg_t *in;
   vt_rbl_t *rbl;
@@ -67,65 +43,42 @@ vt_rbl_create (vt_rbl_t **dest, const cfg_t *sec)
   char *network, *type, *zone;
   float points;
   int i, n;
+  int ret;
 
   root = NULL;
 
-  if ((rbl = malloc (sizeof (vt_rbl_t))) == NULL) {
-    vt_error ("%s: malloc: %s", __func__, strerror (errno));
-    goto failure;
+  if (! (rbl = calloc (1, sizeof (vt_rbl_t)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto FAILURE;
   }
-
-  if ((rbl->lock = malloc (sizeof (pthread_rwlock_t))) == NULL) {
-    vt_error ("%s: malloc: %s", __func__, strerror (errno));
-    goto failure;
+  if ((ret = pthread_rwlock_init (&rbl->lock, NULL)) != 0) {
+    if (ret != ENOMEM)
+      vt_panic ("%s: pthread_rwlock_init: %s", __func__, strerror (ret));
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: pthread_rwlock_init: %s", __func__, strerror (ret));
+    goto FAILURE;
   }
-
-  if (pthread_rwlock_init (rbl->lock, NULL)) {
-    vt_error ("%s: pthread_rwlock_info: %s", __func__, strerror (errno));
-    goto failure;
-  }
-
-  if ((type = cfg_getstr ((cfg_t *)sec, "type")) == NULL) {
-    vt_error ("%s: type mandatory", __func__);
-    errno = EINVAL;
-    goto failure;
-  }
-
-  if ((zone = cfg_getstr ((cfg_t *)sec, "zone")) == NULL) {
-    vt_error ("%s: zone mandatory", __func__);
-    errno = EINVAL;
-    goto failure;
-  }
-
-  if ((rbl->zone = strdup (zone)) == NULL) {
-    vt_error ("%s: strdup: %s", __func__, strerror (errno));
-    goto failure;
-  }
-
-  if (cfg_getbool ((cfg_t *)sec, "ipv6")) {
-    vt_warning ("%s: ipv6 not supported yet, ignoring option", __func__);
-  }
-
-  if (! cfg_getbool ((cfg_t *)sec, "ipv4")) {
-    vt_error ("%s: ipv6 not supported yet, ipv4 disabled", __func__);
-    errno = EINVAL;
-    goto failure;
+  if (! (rbl->zone = vt_cfg_getstrdup (sec, "zone"))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: vt_cfg_getstrdup: %s", __func__, strerror (errno));
+    goto FAILURE;
   }
 
   network = "127.0.0.0/8";
-  points = vt_check_weight (cfg_getfloat ((cfg_t *)sec, "weight"));
+  points = cfg_getfloat (sec, "weight");
   i = 0;
-  n = cfg_size ((cfg_t *)sec, "in");
+  n = cfg_size (sec, "in");
 
   do {
-    if ((weight = vt_rbl_weight_create (network, points)) == NULL) {
-      /* vt_rbl_weight_create logs */
-      goto failure;
-    }
+    if (! (weight = vt_rbl_weight_create (network, points, err)))
+      goto FAILURE;
 
     if ((next = vt_slist_append (root, weight)) == NULL) {
+      vt_rbl_weight_destroy (weight);
+      vt_set_error (err, VT_ERR_NOMEM);
       vt_error ("%s: slist_append: %s", __func__, strerror (errno));
-      goto failure;
+      goto FAILURE;
     }
 
     if (root == NULL)
@@ -133,76 +86,73 @@ vt_rbl_create (vt_rbl_t **dest, const cfg_t *sec)
     if (i >= n)
       break;
 
-    in = cfg_getnsec ((cfg_t *)sec, "in", i++);
+    in = cfg_getnsec (sec, "in", i++);
     network = (char *)cfg_title (in);
-    points = vt_check_weight (cfg_getfloat (in, "weight"));
+    points = cfg_getfloat (in, "weight");
   } while (in);
-
-  root = vt_slist_sort (root, &vt_rbl_weight_sort);
-  rbl->weights = root;
 
   for (i=1, n=ceil ((MAX_BACK_OFF_TIME / BACK_OFF_TIME)); i < n; i<<=1)
     ;
 
   rbl->max_power = i;
-  *dest = rbl;
+  rbl->weights = vt_slist_sort (root, &vt_rbl_weight_sort);
 
-  return VT_SUCCESS;
-
-failure:
-  vt_rbl_destroy (rbl);
+  return rbl;
+FAILURE:
+  (void)vt_rbl_destroy (rbl, NULL);
   vt_slist_free (root, &vt_rbl_weight_destroy, 0);
-
-  if (errno == ENOMEM)
-    return VT_ERR_NOMEM;
-
-  return VT_ERR_INVAL;
-}
-
-void
-vt_rbl_destroy (vt_rbl_t *rbl)
-{
-  // IMPLEMENT
-  return;
+  return NULL;
 }
 
 int
-vt_rbl_check (vt_check_t *check,
-              vt_request_t *request,
-              vt_score_t *score,
-              vt_stats_t *stats,
-              vt_thread_pool_t *thread_pool)
+vt_rbl_destroy (vt_rbl_t *rbl, vt_error_t *err)
 {
-  int ret, skip;
-  vt_rbl_t *rbl = (vt_rbl_t *)check->data;
-  vt_rbl_param_t *param;
+  int ret;
 
-  if ((ret = vt_rbl_skip (&skip, rbl)) != VT_SUCCESS)
-    return ret;
-  if (skip)
-    return VT_SUCCESS;  
-
-  vt_score_lock (score);
-
-  if ((param = malloc (sizeof (vt_rbl_param_t))) == NULL) {
-    vt_error ("%s: malloc: %s", __func__, strerror (errno));
-    return VT_ERR_NOMEM;
+  if (rbl) {
+    if ((ret = pthread_rwlock_destroy (&rbl->lock)) != 0)
+      vt_panic ("%s: pthread_rwlock_destroy: %s", __func__, strerror (ret));
+    if (rbl->zone)
+      free (rbl->zone);
+    if (rbl->weights)
+      vt_slist_free (rbl->weights, &vt_rbl_weight_destroy, 0);
+    free (rbl);
   }
 
-  param->check = check;
-  param->request = request;
-  param->score = score;
-  param->stats = stats;
+  return 0;
+}
 
-  vt_thread_pool_task_push (thread_pool, (void *)param);
+int
+vt_rbl_check (vt_check_t *check, vt_request_t *request, vt_score_t *score,
+  vt_thread_pool_t *thread_pool, vt_error_t *err)
+{
+  int ret, skip;
+  vt_error_t lerr = 0;
+  vt_rbl_t *rbl = (vt_rbl_t *)check->data;
+  vt_rbl_arg_t *arg;
 
-  return VT_SUCCESS;
+  if (! vt_rbl_skip (rbl)) {
+    vt_score_lock (score);
+
+    if (! (arg = calloc (1, sizeof (vt_rbl_arg_t)))) {
+      vt_set_error (err, VT_ERR_NOMEM);
+      vt_error ("%s: calloc: %s", __func__, strerror (errno));
+      return -1;
+    }
+
+    arg->check = check;
+    arg->request = request;
+    arg->score = score;
+
+    vt_thread_pool_task_push (thread_pool, (void *)arg);
+  }
+
+  return 0;
 }
 
 void
-vt_rbl_worker (const vt_rbl_param_t *param,
-               const SPF_server_t *spf_server,
-               const char *query)
+vt_rbl_worker (const vt_rbl_arg_t *arg, const SPF_server_t *spf_server,
+  const char *query)
 {
   int i;
   vt_check_t *check;
@@ -213,9 +163,9 @@ vt_rbl_worker (const vt_rbl_param_t *param,
   SPF_dns_rr_t *dns_rr;
   unsigned long address;
 
-  check = param->check;
+  check = arg->check;
   rbl = (vt_rbl_t *)check->data;
-  score = param->score;
+  score = arg->score;
 
   dns_rr = SPF_dns_lookup (spf_server->resolver, query, ns_t_a, 0);
 
@@ -247,7 +197,7 @@ vt_rbl_worker (const vt_rbl_param_t *param,
       }
 
       if (heaviest)
-        vt_score_update (score, check->id, heaviest->weight);
+        vt_score_update (score, check->cntr, heaviest->weight);
       break;
     case TRY_AGAIN: // SERVFAIL
       vt_rbl_error (rbl);
@@ -260,38 +210,32 @@ vt_rbl_worker (const vt_rbl_param_t *param,
 }
 
 int
-vt_rbl_skip (int *skip, vt_rbl_t *rbl)
+vt_rbl_skip (vt_rbl_t *rbl)
 {
-  int ret;
+  int ret, skip;
   time_t now = time (NULL);
 
-  if ((ret = pthread_rwlock_rdlock (rbl->lock))) {
-    vt_error ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
+  if ((ret = pthread_rwlock_rdlock (&rbl->lock)))
+    vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
 
-  *skip = (rbl->back_off > now) ? 1 : 0;
+  skip = (rbl->back_off > now) ? 1 : 0;
 
-  if ((ret = pthread_rwlock_unlock (rbl->lock))) {
-    vt_error ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
+  if ((ret = pthread_rwlock_unlock (&rbl->lock)))
+    vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
 
-  return VT_SUCCESS;
+  return skip;
 }
 
 
-int
+void
 vt_rbl_error (vt_rbl_t *rbl)
 {
   int ret, power;
   double multiplier;
   time_t time_slot, now = time(NULL);
 
-  if ((ret = pthread_rwlock_wrlock (rbl->lock))) {
-    vt_error ("%s: pthread_rwlock_wrlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
+  if ((ret = pthread_rwlock_wrlock (&rbl->lock)))
+    vt_panic ("%s: pthread_rwlock_wrlock: %s", __func__, strerror (ret));
 
   if (now > rbl->back_off) {
     /* error counter should only be increased if we're within the allowed time
@@ -352,16 +296,12 @@ vt_rbl_error (vt_rbl_t *rbl)
     }
   }
 
-  if ((ret = pthread_rwlock_unlock (rbl->lock))) {
-    vt_error ("%s; pthread_rwlock_unlock: %s", __func__, strerror (ret));
-    return ret;
-  }
-
-  return VT_SUCCESS;
+  if ((ret = pthread_rwlock_unlock (&rbl->lock)))
+    vt_panic ("%s; pthread_rwlock_unlock: %s", __func__, strerror (ret));
 }
 
 vt_rbl_weight_t *
-vt_rbl_weight_create (const char *cidr, float points)
+vt_rbl_weight_create (const char *cidr, float points, vt_error_t *err)
 {
   char buf[INET_ADDRSTRLEN];
   char *p1, *p2;
@@ -384,15 +324,15 @@ vt_rbl_weight_create (const char *cidr, float points)
     bits = strtol ((++p1), NULL, 10);
 
   if (*p1 == '\0' || bits < 0 || bits > 32 || (bits == 0 && errno == EINVAL)) {
-    errno = EINVAL;
-    vt_error ("%s: invalid presentation of network/bitmask: %s", __func__, cidr);
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: bad presentation of network/bitmask: %s", __func__, cidr);
     return NULL;
   }
 
   switch (inet_pton (AF_INET, buf, &network)) {
     case 0:
-      errno = EINVAL;
-      vt_error ("%s: invalid presentation of network/bitmask: %s", __func__, cidr);
+      vt_set_error (err, VT_ERR_BADCFG);
+      vt_error ("%s: bad presentation of network/bitmask: %s", __func__, cidr);
       return NULL;
     case -1:
       vt_error ("%s: inet_pton: %s", __func__, strerror (errno));
@@ -402,8 +342,9 @@ vt_rbl_weight_create (const char *cidr, float points)
   for (netmask=0, i=0; i < bits; i++)
     netmask |= 1 << (31 - i);
 
-  if ((weight = malloc (sizeof (vt_rbl_weight_t))) == NULL) {
-    vt_error ("%s: malloc: %s", __func__, strerror (errno));
+  if (! (weight = calloc (1, sizeof (vt_rbl_weight_t)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
     return NULL;
   }
 
@@ -439,18 +380,34 @@ vt_rbl_weight_sort (void *p1, void *p2)
   return 0;
 }
 
-int
-vt_rbl_weight (vt_rbl_t *rbl, int maximum)
+float
+vt_rbl_max_weight (vt_rbl_t *rbl)
 {
-  int weight = 0;
+  float n = 0.0;
   vt_slist_t *p;
   vt_rbl_weight_t *q;
 
-  for (p=rbl->weights; p; p=p->next) {
+  for (p = rbl->weights; p; p = p->next) {
     q = (vt_rbl_weight_t *)p->data;
-    if ((maximum && q->weight > weight) || (!maximum && q->weight < weight))
-      weight = q->weight;
+    if (q->weight > n)
+      n = q->weight;
   }
 
-  return weight;
+  return n;
+}
+
+float
+vt_rbl_min_weight (vt_rbl_t *rbl)
+{
+  float n = 0.0;
+  vt_slist_t *p;
+  vt_rbl_weight_t *q;
+
+  for (p = rbl->weights; p; p = p->next) {
+    q = (vt_rbl_weight_t *)p->data;
+    if (q->weight < n)
+      n = q->weight;
+  }
+
+  return n;
 }

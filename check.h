@@ -1,5 +1,5 @@
 #ifndef VT_CHECK_H_INCLUDED
-#define VT_CHECK_H_INCLUDED
+#define VT_CHECK_H_INCLUDED 1
 
 /* system includes */
 #include <confuse.h>
@@ -10,13 +10,12 @@
 #include "map.h"
 #include "request.h"
 #include "score.h"
-#include "stats.h"
 
 typedef struct _vt_check vt_check_t;
 
-typedef int(*VT_CHECK_CHECK_FUNC)(vt_check_t *, vt_request_t *, vt_score_t *, vt_error_t *);
-typedef int(*VT_CHECK_WEIGHT_FUNC)(vt_check_t *, int);
-typedef void(*VT_CHECK_DESTROY_FUNC)(vt_check_t *);
+typedef int(*VT_CHECK_CHECK_FUNC)(vt_check_t *, vt_request_t *, vt_score_t *,
+  vt_error_t *);
+typedef int(*VT_CHECK_DESTROY_FUNC)(vt_check_t *, vt_error_t *);
 
 struct _vt_check {
   unsigned int cntr; /* identifier used to keep statistics */
@@ -24,8 +23,9 @@ struct _vt_check {
   unsigned int prio; /* indicates check cost */
   void *data; /* check specific information */
   int *maps;
+  float max_weight;
+  float min_weight;
   VT_CHECK_CHECK_FUNC check_func;
-  VT_CHECK_WEIGHT_FUNC weight_func;
   VT_CHECK_DESTROY_FUNC destroy_func;
 };
 
@@ -34,16 +34,17 @@ struct _vt_check {
 
 typedef struct _vt_check_type vt_check_type_t;
 
-typedef int(*VT_CHECK_TYPE_INIT_FUNC)(cfg_t *);
-typedef int(*VT_CHECK_TYPE_DEINIT_FUNC)(void);
-typedef vt_check_t(*VT_CHECK_TYPE_CREATE_CHECK_FUNC)(const vt_map_list_t *, cfg_t *, vt_error_t *);
+typedef int(*VT_CHECK_TYPE_INIT_FUNC)(cfg_t *, vt_error_t *);
+typedef int(*VT_CHECK_TYPE_DEINIT_FUNC)(vt_error_t *);
+typedef vt_check_t*(*VT_CHECK_TYPE_CREATE_CHECK_FUNC)(const vt_map_list_t *,
+  cfg_t *, vt_error_t *);
 
 struct _vt_check_type {
   char *name;
   unsigned int flags;
   VT_CHECK_TYPE_INIT_FUNC init_func;
   VT_CHECK_TYPE_DEINIT_FUNC deinit_func;
-  VT_CHECK_TYPE_INIT_CHECK_FUNC create_check_func;
+  VT_CHECK_TYPE_CREATE_CHECK_FUNC create_check_func;
 };
 
 int vt_check_sort (void *, void *);
@@ -51,4 +52,3 @@ int vt_check_dynamic_pattern (const char *);
 char *vt_check_unescape_pattern (const char *);
 
 #endif
-

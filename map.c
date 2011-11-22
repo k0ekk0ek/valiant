@@ -1,17 +1,17 @@
 /* system includes */
-#include <confuse.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* valiant includes */
-#include "error.h"
+#include "conf.h"
 #include "map.h"
 #include "map_priv.h"
 #include "request.h"
 
 /* definitions */
-typedef struct _vt_map_list_cache _vt_map_list_cache;
+typedef struct _vt_map_list_cache vt_map_list_cache_t;
 
 struct _vt_map_list_cache {
   float *results;
@@ -28,39 +28,19 @@ static pthread_once_t vt_map_list_init_done = PTHREAD_ONCE_INIT;
 
 
 vt_map_t *
-vt_map_create (cfg_t *sec, vt_errno_t *err)
+vt_map_create (cfg_t *sec, vt_error_t *err)
 {
-  char *member, *title;
-  size_t len;
-  vt_map_t *map = NULL;
+  vt_map_t *map;
 
-  if (! (title = (char *)cfg_title (sec))) {
-    vt_errno (err, VT_ERR_BADCFG);
-    vt_error ("%s (%d): missing title for section 'map'", __func__, __LINE__);
+  if (! (map = calloc (1, sizeof (vt_map_t))) ||
+      ! (map->name = vt_cfg_titledup (sec)))
+  {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: %s", __func__, strerror (errno));
     goto FAILURE;
   }
-  if (! (member = cfg_getstr (sec, "member"))) {
-    vt_errno (err, VT_ERR_BADCFG);
-    vt_error ("%s (%d): missing option 'member' for section 'map'"
-      " with title '%s'", __func__, __LINE__, title);
-    goto FAILURE;
-  }
-  if (! (map = calloc (1, sizeof (vt_map_t)))) {
-    vt_errno (err, VT_ERR_NOMEM);
-    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
-    goto FAILURE;
-  }
-  if (! (map->name = strdup (title))) {
-    vt_errno (err, VT_ERR_NOMEM);
-    vt_error ("%s (%d): strdup: %s", __func__, __LINE__, strerror (errno));
-    goto FAILURE;
-  }
-  if ((map->member = v_request_mbrtoid (mbr)) == VT_REQUEST_MEMBER_NONE) {
-    vt_errno (err, VT_ERR_BADCFG);
-    vt_error ("%s (%d): invalid option 'member' for section 'map'"
-      " with title '%s'", __func__, __LINE__, title);
-    goto FAILURE;
-  }
+
+  map->member = vt_request_mbrtoid (cfg_getstr (sec, "member"));
 
   return map;
 FAILURE:
@@ -81,7 +61,7 @@ vt_map_destroy (vt_map_t *map)
 }
 
 int *
-vt_map_lineup_create (const vt_map_list_t *list, cfg_t *sec, vt_errno_t *err)
+vt_map_lineup_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
 {
   char *name;
   int *lineup = NULL;
@@ -90,8 +70,8 @@ vt_map_lineup_create (const vt_map_list_t *list, cfg_t *sec, vt_errno_t *err)
 
   if ((n = cfg_size (sec, "maps"))) {
     if (! (lineup = calloc (n, sizeof (int)))) {
-      vt_set_errno (err, VT_ERR_NOMEM);
-      vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
+      vt_set_error (err, VT_ERR_NOMEM);
+      vt_error ("%s: calloc: %s", __func__, strerror (errno));
       goto FAILURE;
     }
 
@@ -99,8 +79,7 @@ vt_map_lineup_create (const vt_map_list_t *list, cfg_t *sec, vt_errno_t *err)
       name = cfg_getnstr (sec, "maps", i);
       if ((pos = vt_map_list_get_map_pos (list, name)) < 0) {
         vt_set_errno (err, VT_ERR_BADCFG);
-        vt_error ("%s (%d): invalid option 'maps' with value '%s'",
-          __func__, __LINE__, name);
+        vt_error ("%s: invalid option 'maps' with value '%s'", __func__, name);
         goto FAILURE;
       }
       lineup[i] = pos;
@@ -116,56 +95,59 @@ FAILURE:
 }
 
 vt_map_list_t *
-vt_map_list_create (vt_errno_t *err)
+vt_map_list_create (vt_error_t *err)
 {
   int ret;
   vt_map_list_t *list = NULL;
 
   if (! (list = calloc (1, sizeof (vt_map_list_t)))) {
-    vt_errno (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
     goto FAILURE;
   }
   if ((ret = pthread_rwlock_init (&list->lock, NULL)) != 0) {
-    vt_error ("%s (%d): pthread_rwlock_init: %s", __func__, __LINE__, strerror (ret));
-    if (ret == ENOMEM)
-      err = VT_ERR_NOMEM;
-    else
-      err = VT_ERR_FATAL;
+    if (ret != ENOMEM)
+      vt_panic ("%s: pthread_rwlock_init: %s", __func__, strerror (ret));
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: pthread_rwlock_init: %s", __func__, strerror (ret));
     goto FAILURE;
   }
 
   return list;
 FAILURE:
-  v_map_list_destroy (list, 0);
+  (void)vt_map_list_destroy (list, 0, NULL);
   return NULL;
 }
 
 int
-vt_map_list_destroy (vt_map_list_t *list, int maps, vt_errno_t *err)
+vt_map_list_destroy (vt_map_list_t *list, int maps, vt_error_t *err)
 {
   int i;
   int ret;
+  vt_error_t lerr;
+  vt_map_t *map;
 
   if (list) {
     if ((ret = pthread_rwlock_destroy (&list->lock)) != 0)
-      vt_panic ("%s (%d): pthread_rwlock_destroy: %s", __func__, __LINE__, strerror (ret));
+      vt_panic ("%s: pthread_rwlock_destroy: %s", __func__, strerror (ret));
 
     if (maps && list->maps) {
       for (i=0; list->maps[i]; ) {
-        if (list->maps[i]->destroy_func (list->maps[i], &ret) == 0)
+        map = list->maps[i];
+        if (map->destroy_func (map, &lerr) == 0)
           i++; /* must be temporary error, or destroy_func should bail */
       }
     }
+
     if (list->maps)
       free (list->maps);
     free (list);
   }
-  return 0
+  return 0;
 }
 
 int
-vt_map_list_cache_reset (const vt_map_list_t *list, vt_errno_t *err)
+vt_map_list_cache_reset (const vt_map_list_t *list, vt_error_t *err)
 {
   float *results;
   int *maps, ret;
@@ -173,20 +155,20 @@ vt_map_list_cache_reset (const vt_map_list_t *list, vt_errno_t *err)
 
   ret = pthread_once (&vt_map_list_init_done, vt_map_list_cache_init);
   if (ret != 0)
-    vt_panic ("%s (%d): ptrhead_once: %s", __func__, __LINE__, strerror (ret));
+    vt_panic ("%s: ptrhead_once: %s", __func__, strerror (ret));
   if (! (cache = pthread_getspecific (vt_map_list_cache_key)))
-    vt_panic ("%s (%d): map cache unavailable", __func__, __LINE__);
+    vt_panic ("%s: map cache unavailable", __func__);
 
-  ret = pthread_rwlock_rdlock ((pthread_rwlock_t *)&list->lock);
+  ret = pthread_rwlock_rdlock (&(list->lock));
   if (ret != 0)
-    vt_error ("%s (%d): pthread_rwlock_rdlock: %s", __func__, __LINE__, strerror (ret));
+    vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
 
   if (list->nmaps > cache->nmaps) {
-    if (! (maps = realloc (cache->maps, list->nmaps * sizeof (int)))
+    if (! (maps = realloc (cache->maps, list->nmaps * sizeof (int))) ||
         ! (results = realloc (cache->results, list->nmaps * sizeof (float))))
     {
-      vt_errno (err, VT_ERR_NOMEM);
-      vt_error ("%s (%d): realloc: %s", __func__, __FUNC__, strerror (errno));
+      vt_set_error (err, VT_ERR_NOMEM);
+      vt_error ("%s: realloc: %s", __func__, strerror (errno));
       return -1;
     }
     cache->results = results;
@@ -200,16 +182,16 @@ vt_map_list_cache_reset (const vt_map_list_t *list, vt_errno_t *err)
 }
 
 int
-vt_map_list_add_map (vt_map_list_t *list, const vt_map_t *map, vt_errno_t *err)
+vt_map_list_add_map (vt_map_list_t *list, const vt_map_t *map, vt_error_t *err)
 {
-  int ret, err;
+  int ret;
   unsigned int nmaps;
   vt_map_t **maps;
 
-  if (! (maps = realloc (list->maps, (list->nmaps + 2) * sizeof (vt_map_t *)))) {
-    vt_errno (err, VT_ERR_NOMEM);
-    vt_error ("%s (%d): realloc: %s", __func__, __LINE__, strerror (errno));
-    return -1;;
+  if (! (maps = realloc (list->maps, (list->nmaps+2) * sizeof (vt_map_t *)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: realloc: %s", __func__, strerror (errno));
+    return -1;
   }
 
   maps[list->nmaps++] = (vt_map_t*)map;
@@ -234,33 +216,33 @@ vt_map_list_get_map_pos (const vt_map_list_t *list, const char *name)
 
 float
 vt_map_list_search (const vt_map_list_t *list, int pos,
-  const vt_request_t *request, vt_errno_t *err)
+  const vt_request_t *request, vt_error_t *err)
 {
   char *str;
-  int ret;
+  float res;
   size_t len;
+  vt_error_t lerr;
   vt_map_t *map;
   vt_map_list_cache_t *cache;
 
   if (! (cache = pthread_getspecific (vt_map_list_cache_key)))
-    vt_panic ("%s (%d): map cache unavailable", __func__, __LINE__);
-  if (id < 0 || id > cache->nmaps)
-    vt_panic ("%s (%d): invalid map position %d", __func__, __LINE__, pos);
+    vt_panic ("%s: map cache unavailable", __func__);
+  if (pos < 0 || pos > cache->nmaps)
+    vt_panic ("%s: invalid map position %d", __func__, pos);
 
   if (cache->maps[pos] == 0) {
-    map = list->maps[id];
-    ret = 0;
+    lerr = 0;
+    map = list->maps[pos];
 
-    if (! (str = vt_request_mbrbyid (request, map->member))) {
-      vt_panic ("%s (%d): invalid request member code %d",
-        __func__, __LINE__, map->member);
-    }
-    if (! (res = map->search_func (map, str, len, &ret)) && ret != 0) {
-      vt_errno (err, ret);
+    if (! (str = vt_request_mbrbyid (request, map->member)))
+      vt_panic ("%s: invalid request member %d", __func__, map->member);
+
+    if (! (res = map->search_func (map, str, len, &lerr)) && lerr != 0) {
+      vt_errno (err, lerr);
       return 0.0;
     }
 
-    cache->maps[id] = res;
+    cache->maps[pos] = res;
   }
 
   return cache->results[pos];
@@ -268,7 +250,7 @@ vt_map_list_search (const vt_map_list_t *list, int pos,
 
 float
 vt_map_list_evaluate (const vt_map_list_t *list, const int *lineup,
-  const vt_request_t *req, vt_errno_t *err)
+  const vt_request_t *req, vt_error_t *err)
 {
   int ret;
   int *pos;
@@ -288,30 +270,22 @@ vt_map_list_evaluate (const vt_map_list_t *list, const int *lineup,
   return 0.0;
 }
 
-int
+void
 vt_map_list_lock (vt_map_list_t *list)
 {
   int ret;
 
-  if ((ret = pthread_rwlock_wrlock (&list->lock)) != 0) {
-    vt_error ("%s: pthread_rwlock_wrlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
-
-  return VT_SUCCESS;
+  if ((ret = pthread_rwlock_wrlock (&list->lock)) != 0)
+    vt_panic ("%s: pthread_rwlock_wrlock: %s", __func__, strerror (ret));
 }
 
-int
+void
 vt_map_list_unlock (vt_map_list_t *list)
 {
   int ret;
 
-  if ((ret = pthread_rwlock_unlock (&list->lock)) != 0) {
-    vt_error ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
-    return VT_ERR_SYS;
-  }
-
-  return VT_SUCCESS;
+  if ((ret = pthread_rwlock_unlock (&list->lock)) != 0)
+    vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
 }
 
 void

@@ -1,11 +1,12 @@
 /* system includes */
-#include <confuse.h>
+#include <errno.h>
 #include <stdarg.h>
 #include <string.h>
 #include <syslog.h>
 
 /* valiant includes */
 #include "conf.h"
+#include "error.h"
 #include "request.h"
 #include "utils.h"
 
@@ -50,13 +51,28 @@ vt_cfg_getstrdup (cfg_t *cfg, const char *name)
 {
   char *s1, *s2;
 
-  if (! (s1 = cfg_getstr (cfg, name))) {
+  if ((s1 = cfg_getstr (cfg, name))) {
+    s2 = strdup (s1);
+  } else {
+    s2 = NULL;
     errno = EINVAL;
-    return NULL;
   }
-  if (! (s2 = strdup (s1))) {
-    return NULL;
+
+  return s2;
+}
+
+char *
+vt_cfg_titledup (cfg_t *cfg)
+{
+  char *s1, *s2 = NULL;
+
+  if ((s1 = (char *)cfg_title (cfg))) {
+    s2 = strdup (s1);
+  } else {
+    s2 = NULL;
+    errno = EINVAL;
   }
+
   return s2;
 }
 
@@ -69,13 +85,13 @@ vt_cfg_error (cfg_t *cfg, const char *fmt, va_list ap)
 int
 vt_cfg_validate_check_rbl (cfg_t *cfg, cfg_opt_t *opt)
 {
-	bool exists;
-  cfg_opt_t *subopt;
+	cfg_opt_t *subopt;
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
   char *p, *title, *zone;
   char *name;
   char *names[] = {"in", "ipv4", "ipv6", "type", "zone", "weight", "maps",
                    "default", NULL};
+  int exists;
   unsigned int i, j, n;
 
   title = (char *)cfg_title (sec);
@@ -102,11 +118,11 @@ vt_cfg_validate_check_rbl (cfg_t *cfg, cfg_opt_t *opt)
   for (i=0, n=vt_cfg_size_opts (sec); i < n; i++) {
     subopt = vt_cfg_getnopt (sec, i);
     name = (char *)cfg_opt_name (subopt);
-    exists = false;
+    exists = 0;
 
     for (j=0; ! exists && names[j]; j++) {
       if (strcmp (name, names[j]) == 0)
-        exists = true;
+        exists = 1;
     }
 
     if (! exists && vt_cfg_opt_parsed (subopt)) {
@@ -121,14 +137,14 @@ vt_cfg_validate_check_rbl (cfg_t *cfg, cfg_opt_t *opt)
 int
 vt_cfg_validate_check_str (cfg_t *cfg, cfg_opt_t *opt)
 {
-  bool exists;
   cfg_opt_t *subopt;
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
   char *mbr, *name, *title;
   char *names[] = {"default", "maps", "member", "negate", "nocase", "pattern",
                    "type", "weight", NULL};
+  int exists;
   unsigned int i, j, n;
-  vt_request_mbr_t mbrid;
+  vt_request_member_t mbrid;
 
   title = (char *)cfg_title (sec);
 
@@ -137,7 +153,7 @@ vt_cfg_validate_check_str (cfg_t *cfg, cfg_opt_t *opt)
     cfg_error (cfg, "member missing in check %s", title);
     return -1;
   }
-  if (vt_request_mbrtoid (&mbrid, mbr) != VT_SUCCESS) {
+  if (mbrid = vt_request_mbrtoid (mbr) == VT_REQUEST_MEMBER_NONE) {
     cfg_error (cfg, "invalid member '%s' in check %s", mbr, title);
     return -1;
   }
@@ -146,11 +162,11 @@ vt_cfg_validate_check_str (cfg_t *cfg, cfg_opt_t *opt)
   for (i=0, n=vt_cfg_size_opts (sec); i < n; i++) {
     subopt = vt_cfg_getnopt (sec, i);
     name = (char *)cfg_opt_name (subopt);
-    exists = false;
+    exists = 0;
 
     for (j=0; ! exists && names[j]; j++) {
       if (strcmp (name, names[j]) == 0)
-        exists = true;
+        exists = 1;
     }
 
     if (! exists && vt_cfg_opt_parsed (subopt)) {
@@ -202,9 +218,9 @@ vt_cfg_validate_syslog_facility (cfg_t *cfg, cfg_opt_t *opt)
 {
   char *str;
 
-  if (! (str = cfg_getnstr (opt, 0)))
+  if (! (str = cfg_opt_getnstr (opt, 0)))
     return -1;
-  return (vt_log_facility (str) >= 0) ? 0 : -1;
+  return (vt_syslog_facility (str) >= 0) ? 0 : -1;
 }
 
 int
@@ -212,9 +228,9 @@ vt_cfg_validate_syslog_priority (cfg_t *cfg, cfg_opt_t *opt)
 {
   char *str;
 
-  if (! (str = cfg_getnstr (opt, 0)))
+  if (! (str = cfg_opt_getnstr (opt, 0)))
     return -1;
-  return (vt_log_priority (str) >= 0) ? 0 : -1;
+  return (vt_syslog_priority (str) >= 0) ? 0 : -1;
 }
 
 cfg_t *
@@ -273,9 +289,9 @@ vt_cfg_parse (const char *path)
     CFG_STR ("delay_response", VT_CFG_DELAY_RESP, CFGF_NONE),
     CFG_STR ("error_response", VT_CFG_ERROR_RESP, CFGF_NONE),
     CFG_STR ("pid_file", VT_CFG_PID_FILE, CFGF_NONE),
-    CFG_STR ("syslog_identity", VT_CFG_LOG_IDENT, CFGF_NONE),
-    CFG_STR ("syslog_facility", VT_CFG_LOG_FACILITY, CFGF_NONE),
-    CFG_STR ("syslog_priority", VT_CFG_LOG_PRIO, CFGF_NONE),
+    CFG_STR ("syslog_identity", VT_CFG_SYSLOG_IDENT, CFGF_NONE),
+    CFG_STR ("syslog_facility", VT_CFG_SYSLOG_FACILITY, CFGF_NONE),
+    CFG_STR ("syslog_priority", VT_CFG_SYSLOG_PRIO, CFGF_NONE),
     CFG_END ()
   };
 

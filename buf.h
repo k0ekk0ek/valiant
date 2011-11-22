@@ -14,7 +14,7 @@ struct _vt_buf {
 
 #define vt_buf_str(s) ((s)->buf)
 
-int vt_buf_init (vt_buf_t *);
+int vt_buf_init (vt_buf_t *, size_t);
 vt_buf_t *vt_buf_ncpy (vt_buf_t *, const char *, size_t);
 void vt_buf_deinit (vt_buf_t *);
 

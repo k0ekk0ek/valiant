@@ -23,5 +23,7 @@
 //unsigned int vt_cfg_opt_parsed (cfg_opt_t *);
 
 cfg_t *vt_cfg_parse (const char *);
+char *vt_cfg_getstrdup (cfg_t *, const char *);
+char *vt_cfg_titledup (cfg_t *);
 
 #endif

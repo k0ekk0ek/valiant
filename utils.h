@@ -1,19 +1,13 @@
 #ifndef VT_UTILS_H_INCLUDED
-#define VT_UTILS_H_INCLUDED
+#define VT_UTILS_H_INCLUDED 1
 
 /* system includes */
 #include <arpa/inet.h>
-#include <stdarg.h>
-#include <stdlib.h>
+
+/* valiant includes */
+#include "context.h"
 
 int reverse_inet_addr(char *, char *, socklen_t);
-void vt_open_log (const char *, int, int);
-void vt_log (int, const char *, va_list);
-void vt_panic (const char *, ...);
-void vt_fatal (const char *, ...);
-void vt_error (const char *, ...);
-void vt_warning (const char *, ...);
-void vt_info (const char *, ...);
-void vt_debug (const char *, ...);
+void daemonize (vt_context_t *);
 
 #endif

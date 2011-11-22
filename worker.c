@@ -17,20 +17,15 @@ static pthread_key_t vt_worker_key;
 static pthread_once_t vt_worker_init_done = PTHREAD_ONCE_INIT;
 
 int
-vt_worker_points_definitive (int num,
-                             int min_gain,
-                             int max_gain,
-                             int min_bound,
-                             int max_bound)
+vt_worker_weight_static (float cur, float min_gain, float max_gain,
+  float min_bound, float max_bound)
 {
-  num = score->points;
-  min = num + min_gain;
-  max = num + max_gain;
+  float min = cur + min_gain;
+  float max = cur + max_gain;
 
-  
-  if (((!min_bound || num >= min_bound) && (!max_bound || num <= max_bound)) &&
-      ((!min_bound || min >= min_bound) && (!max_bound || min <= max_bound)) &&
-      ((!min_bound || max >= min_bound) && (!max_bound || max <= max_bound)))
+  if (((!min_bound || cur >= min_bound) && (!max_bound || cur < max_bound)) &&
+      ((!min_bound || min >= min_bound) && (!max_bound || min < max_bound)) &&
+      ((!min_bound || max >= min_bound) && (!max_bound || max < max_bound)))
     return 1;
   return 0;
 }
@@ -102,7 +97,7 @@ vt_worker (void *arg)
   vt_stage_t *stage;
   vt_worker_store_t *store;
 
-  sockfd = ((vt_worker_arg_t *)arg)->sockfd;
+  fd = ((vt_worker_arg_t *)arg)->fd;
   ctx = ((vt_worker_arg_t *)arg)->ctx;
 
   if ((ret = pthread_once (&vt_worker_init_done, vt_worker_init)) != 0)
@@ -161,20 +156,16 @@ vt_worker (void *arg)
 
     vt_score_wait (score);
 
-    num = score->points;
-    min = num + stage->min_gained_weight;
-    max = num + stage->max_gained_weight;
+    cur = score->points;
+    min_gain = cur + stage->min_weight_gained;
+    max_gain = cur + stage->max_weight_gained;
     min_bound = ctx->delay_threshold;
     max_bound = ctx->block_threshold;
 
-    if (vt_worker_score_definitive (num, min, max, 0, min_bound) ||
-        vt_worker_score_definitive (num, min, max, min_bound, max_bound) ||
-        vt_worder_score_definitive (num, min, max, max_bound, 0))
-    {
-      // just reply, the score will not change
-    }
-
-    // continue checking
+    if (vt_worker_weight_static (cur, min_gain, max_gain, 0, min_bound)
+     || vt_worker_weight_static (cur, min_gain, max_gain, min_bound, max_bound)
+     || vt_worker_weight_static (cur, min_gain, max_gain, max_bound, 0))
+      break; /* score won't change */
   }
 
   vt_stats_update (ctx->stats, score);
@@ -186,5 +177,5 @@ vt_worker (void *arg)
   else
     vt_worker_reply (sockfd, ctx->allow_resp);
 
-  // free stuff
+  free (arg);
 }

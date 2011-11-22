@@ -2,14 +2,20 @@
 #define VT_ERROR_H_INCLUDED 1
 
 /* system includes */
-#include <errno.h>
 #include <stdarg.h>
 
 #define VT_SUCCESS (0)
 #define VT_ERR_NOMEM (1)
 #define VT_ERR_NOBUFS (2)
-#define VT_ERR_CONNFAILED (3)
-#define VT_ERR_INVAL (4)
+#define VT_ERR_INVAL (3)
+#define VT_ERR_QFULL (4)
+#define VT_ERR_MAP (5)
+#define VT_ERR_ALREADY (6)
+#define VT_ERR_BADCFG (7)
+#define VT_ERR_BADMBR (8)
+#define VT_ERR_CONNFAILED (9)
+#define VT_ERR_NORETRY (10) /* permanent error */
+#define VT_ERR_RETRY (11) /* temporary error */
 
 typedef int vt_error_t;
 

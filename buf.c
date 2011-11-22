@@ -15,7 +15,7 @@ vt_buf_init (vt_buf_t *buf, size_t len)
   memset (buf, 0, sizeof (vt_buf_t));
   if (len && ! (buf->buf = calloc (len, sizeof (char))))
     return -1;
-  buf->len = VT_BUF_LEN;
+  buf->len = len;
   buf->cnt = 0;
   return 0;
 }
@@ -34,13 +34,13 @@ vt_buf_ncpy (vt_buf_t *buf, const char *str, size_t len)
       // FIXME: handle integer overflow
       nlen = len + 1;
       if (! (nbuf = realloc (buf->buf, nlen * sizeof (char))))
-        return -1;
+        return NULL;
       buf->buf = nbuf;
       buf->len = nlen;
     }
 
     memmove (buf->buf, str, len);
-    buf->buf+len = '\0'; /* always null terminate */
+    *(buf->buf+len) = '\0'; /* always null terminate */
     buf->cnt = len;
   }
 
