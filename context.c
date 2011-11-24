@@ -28,7 +28,7 @@ vt_context_map_list_create (cfg_t *cfg, vt_map_type_t **map_types,
     {
       for (j = 0; map_types[j]; j++) {
         if (strcmp (type, map_types[j]->name) == 0) {
-          if (! (map = map_types[j]->create_map_func (cfg, err)))
+          if (! (map = map_types[j]->create_map_func (sec, err)))
             goto FAILURE;
           if (vt_map_list_add_map (list, map, err) < 0) {
             (void)map->destroy_func (map, NULL);

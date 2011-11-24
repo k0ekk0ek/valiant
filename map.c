@@ -233,9 +233,11 @@ vt_map_list_search (const vt_map_list_t *list, int pos,
   if (cache->maps[pos] == 0) {
     lerr = 0;
     map = list->maps[pos];
-
+vt_error ("%s (%d): searching map: %s", __func__, __LINE__, map->name);
     if (! (str = vt_request_mbrbyid (request, map->member)))
       vt_panic ("%s: invalid request member %d", __func__, map->member);
+
+    // FIXME: add connect functionality here somewhere
 
     if (! (res = map->search_func (map, str, len, &lerr)) && lerr != 0) {
       vt_set_error (err, lerr);

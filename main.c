@@ -11,6 +11,7 @@
 /* valiant includes */
 #include "error.h"
 #include "check_dnsbl.h"
+#include "check_map.h"
 #include "check_pcre.h"
 #include "check_rhsbl.h"
 #include "check_str.h"
@@ -21,7 +22,7 @@
 #include "worker.h"
 
 vt_map_type_t *map_types[2];
-vt_check_type_t *check_types[5];
+vt_check_type_t *check_types[6];
 
 void
 vt_usage (void)
@@ -45,10 +46,11 @@ main (int argc, char *argv[])
   map_types[1] = NULL;
   /* init check types */
   check_types[0] = vt_check_dnsbl_type ();
-  check_types[1] = vt_check_pcre_type ();
-  check_types[2] = vt_check_rhsbl_type ();
-  check_types[3] = vt_check_str_type ();
-  check_types[4] = NULL;
+  check_types[1] = vt_check_map_type ();
+  check_types[2] = vt_check_pcre_type ();
+  check_types[3] = vt_check_rhsbl_type ();
+  check_types[4] = vt_check_str_type ();
+  check_types[5] = NULL;
 
   /* parse command line arguments */
   while ((c = getopt (argc, argv, ":c:")) != -1) {

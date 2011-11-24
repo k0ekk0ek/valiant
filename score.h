@@ -4,6 +4,9 @@
 /* system includes */
 #include <pthread.h>
 
+#define VT_SCORE_MIN_BOUND (-50000)
+#define VT_SCORE_MAX_BOUND (50000)
+
 typedef struct vt_score_struct vt_score_t;
 
 struct vt_score_struct {
@@ -24,4 +27,3 @@ void vt_score_reset (vt_score_t *);
 void vt_score_wait (vt_score_t *);
 
 #endif
-

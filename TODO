@@ -25,8 +25,8 @@ v 19. Rename constants.h to valiant.h.
   20. Create check variant (check_map) that does a map lookup and increments
       the score with the specified value.
 v 21. Finish implementation of stages.
-  22. Expand configuration validation.
-  23. Find out what extra configuration options should be available to control
+v 22. Expand configuration validation.
+v 23. Find out what extra configuration options should be available to control
       program execution etc.
       Example: http://code.google.com/p/gross/wiki/NewConfigFileFormat
 v 24. Implement request parsing.
@@ -37,7 +37,7 @@ v 27. Make API changes to support new statistics gathering method.
       cleaned up.
   29. Implement support for SPF checks.
   30. Make it a daemon.
-  31. Design the context to contain the stages, maps, checks etc.
+v 31. Design the context to contain the stages, maps, checks etc.
   32. Add posibility to add default result to map, per check.
 v 33. Stage should know how much the following stages can influence the score
       and make decisions based on that knowledge.

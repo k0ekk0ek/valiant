@@ -79,6 +79,11 @@ vt_map_bdb_create (cfg_t *sec, vt_error_t *err)
   db->set_errcall (db, vt_map_bdb_error);
   data->db = db;
 
+  // FIXME: valiant should connect after creating, but we'll leave this here
+  // for testing and debugging.
+  if (vt_map_bdb_open (map, err) != 0)
+    goto FAILURE;
+
   return map;
 FAILURE:
   (void)vt_map_bdb_destroy (map, NULL);
@@ -136,7 +141,7 @@ vt_map_bdb_search (vt_map_t *map, const char *str, size_t len, vt_error_t *err)
   data.data = &res;
   data.ulen = sizeof (res);
   data.flags = DB_DBT_USERMEM;
-
+vt_error ("%s (%d): key: %s", __func__, __LINE__, str);
   // FIXME: provide more specific error messages
   switch ((ret = db->get (db, NULL, &key, &data, 0))) {
     case 0: /* found */
@@ -152,7 +157,7 @@ vt_map_bdb_search (vt_map_t *map, const char *str, size_t len, vt_error_t *err)
     default:
       vt_panic ("%s: db->get: %s", __func__, db_strerror (ret));
   }
-
+vt_error ("%s (%d): returned: %d, result: %f", __func__, __LINE__, ret, res);
   return vt_check_weight (res);
 }
 

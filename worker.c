@@ -27,11 +27,18 @@ static pthread_key_t vt_worker_key;
 static pthread_once_t vt_worker_init_done = PTHREAD_ONCE_INIT;
 
 int
-vt_worker_weight_static (float cur, float min_gain, float max_gain,
-  float min_bound, float max_bound)
+vt_worker_weight_static (int cur, int min_gain, int max_gain,
+  int min_bound, int max_bound)
 {
-  float min = cur + min_gain;
-  float max = cur + max_gain;
+  int min;
+  int max;
+
+  if (cur <= VT_SCORE_MIN_BOUND
+   || cur >= VT_SCORE_MAX_BOUND)
+    return 1;
+
+  min = cur + min_gain;
+  max = cur + max_gain;
 
   if (((!min_bound || cur >= min_bound) && (!max_bound || cur < max_bound)) &&
       ((!min_bound || min >= min_bound) && (!max_bound || min < max_bound)) &&
@@ -154,14 +161,15 @@ vt_worker (void *arg)
 
       /* skip check? */
       ret = 0;
-      if (! (eval = vt_map_list_evaluate (ctx->maps, stage->maps, request, &ret))) {
+      if (! (eval = vt_map_list_evaluate (ctx->maps, check->maps, request, &ret))) {
         if (ret) {
+          vt_error ("ret here: %d", ret);
           vt_worker_resp (fd, ctx->error_resp);
           return;
         }
         //continue; // skip // FIXME: see above
       }
-
+vt_error ("map eval here: %f", eval);
       if (check->check_func (check, request, score, &err) != 0) {
         vt_worker_resp (fd, ctx->error_resp);
         return;
@@ -170,11 +178,11 @@ vt_worker (void *arg)
 
     vt_score_wait (score);
 
-    float cur = score->points;
-    float min_gain = cur + stage->min_weight_diff;
-    float max_gain = cur + stage->max_weight_diff;
-    float min_bound = ctx->delay_threshold;
-    float max_bound = ctx->block_threshold;
+    int cur = score->points;
+    int min_gain = cur + stage->min_weight_diff;
+    int max_gain = cur + stage->max_weight_diff;
+    int min_bound = ctx->delay_threshold;
+    int max_bound = ctx->block_threshold;
 
     if (vt_worker_weight_static (cur, min_gain, max_gain, 0, min_bound)
      || vt_worker_weight_static (cur, min_gain, max_gain, min_bound, max_bound)

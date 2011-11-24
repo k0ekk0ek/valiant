@@ -105,7 +105,14 @@ vt_check_unescape_pattern (const char *s1)
 int
 vt_check_weight (float weight)
 {
-  return (int)(weight * 100);
+  long res;
+
+  res = (long)(weight * 100);
+  if (res < VT_SCORE_MIN_BOUND)
+    res = VT_SCORE_MIN_BOUND;
+  if (res > VT_SCORE_MAX_BOUND)
+    res = VT_SCORE_MAX_BOUND;
+  return res;
 }
 
 int

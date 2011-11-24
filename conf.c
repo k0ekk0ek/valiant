@@ -180,6 +180,36 @@ vt_cfg_validate_check_str (cfg_t *cfg, cfg_opt_t *opt)
 }
 
 int
+vt_cfg_validate_check_map (cfg_t *cfg, cfg_opt_t *opt)
+{
+  cfg_opt_t *subopt;
+  cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
+  char *name, *title;
+  char *names[] = {"type","default", "maps", "member", NULL};
+  int i, n, j;
+  int exists;
+
+  title = (char *)cfg_title (sec);
+
+  for (i=0, n=vt_cfg_size_opts (sec); i < n; i++) {
+    subopt = vt_cfg_getnopt (sec, i);
+    name = (char *)cfg_opt_name (subopt);
+    exists = 0;
+
+    for (j=0; ! exists && names[j]; j++) {
+      if (strcmp (name, names[j]) == 0)
+        exists = 1;
+    }
+
+    if (! exists && vt_cfg_opt_parsed (subopt)) {
+      cfg_error (cfg, "invalid option or section '%s' in check %s", name, title);
+      return -1;
+    }
+  }
+  return 0;
+}
+
+int
 vt_cfg_validate_check (cfg_t *cfg, cfg_opt_t *opt)
 {
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
@@ -197,6 +227,8 @@ vt_cfg_validate_check (cfg_t *cfg, cfg_opt_t *opt)
   if (strcmp (type, "pcre")  == 0 ||
       strcmp (type, "str")   == 0)
     return vt_cfg_validate_check_str (cfg, opt);
+  if (strcmp (type, "map") == 0)
+    return vt_cfg_validate_check_map (cfg, opt);
 
   cfg_error (cfg, "invalid type '%s' in check '%s'", type, title);
   return -1;
