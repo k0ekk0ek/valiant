@@ -12,6 +12,7 @@ vt_check_t *
 vt_check_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
 {
   vt_check_t *check;
+  vt_error_t lerr;
 
   if (! (check = calloc (1, sizeof (vt_check_t)))) {
     vt_set_error (err, VT_ERR_NOMEM);
@@ -23,10 +24,13 @@ vt_check_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
     vt_error ("%s: strdup: %s", __func__, strerror (errno));
     goto FAILURE;
   }
-
-  if (! (check->maps = vt_map_lineup_create (list, sec, err)))
+vt_error ("%s (%d)", __func__, __LINE__);
+  lerr = 0;
+  if (! (check->maps = vt_map_lineup_create (list, sec, &lerr)) && lerr != 0) {
+    vt_set_error (err, lerr);
     goto FAILURE;
-
+  }
+vt_error ("%s (%d)", __func__, __LINE__);
   return check;
 FAILURE:
   (void)vt_check_destroy (check, NULL);
@@ -96,4 +100,58 @@ vt_check_unescape_pattern (const char *s1)
  *p2 = '\0';
 
   return s2;
+}
+
+int
+vt_check_weight (float weight)
+{
+  return (int)(weight * 100);
+}
+
+int
+vt_check_types_init (cfg_t *cfg, vt_check_type_t **types, vt_error_t *err)
+{
+  cfg_t *sec;
+  char *type;
+  int i, j, n;
+  int ntypes;
+  vt_error_t lerr;
+
+  for (i = 0, ntypes = 0; types[i]; i++) {
+    if (types[i]->init_func)
+      ntypes++;
+  }
+
+  for (i = 0, n = cfg_size (cfg, "type"); i < n; i++) {
+    if ((sec = cfg_getnsec (cfg, "type", i)) &&
+        (type = (char *)cfg_title (sec)))
+    {
+      for (j = 0; types[j]; j++) {
+        if (types[j]->init_func && strcmp (type, types[j]->name) == 0) {
+          if (types[j]->init_func (sec, &lerr) < 0) {
+            vt_set_error (err, lerr);
+            goto FAILURE;
+          }
+          break;
+        }
+      }
+
+      if (! types[j]) {
+        vt_set_error (err, VT_ERR_BADCFG);
+        vt_error ("%s: bad check type %s", __func__, type);
+        goto FAILURE;
+      }
+    }
+  }
+
+  if (i != ntypes) {
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: some check types were not initialize", __func__);
+    goto FAILURE;
+  }
+
+  return 0;
+FAILURE:
+  // free, memory, deinitialize stuff!
+  return -1;
 }

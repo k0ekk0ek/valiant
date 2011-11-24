@@ -14,7 +14,7 @@
 typedef struct _vt_map_list_cache vt_map_list_cache_t;
 
 struct _vt_map_list_cache {
-  float *results;
+  int *results;
   int *maps;
   unsigned int nmaps;
 };
@@ -149,7 +149,7 @@ vt_map_list_destroy (vt_map_list_t *list, int maps, vt_error_t *err)
 int
 vt_map_list_cache_reset (const vt_map_list_t *list, vt_error_t *err)
 {
-  float *results;
+  int *results;
   int *maps, ret;
   vt_map_list_cache_t *cache;
 
@@ -165,7 +165,7 @@ vt_map_list_cache_reset (const vt_map_list_t *list, vt_error_t *err)
 
   if (list->nmaps > cache->nmaps) {
     if (! (maps = realloc (cache->maps, list->nmaps * sizeof (int))) ||
-        ! (results = realloc (cache->results, list->nmaps * sizeof (float))))
+        ! (results = realloc (cache->results, list->nmaps * sizeof (int))))
     {
       vt_set_error (err, VT_ERR_NOMEM);
       vt_error ("%s: realloc: %s", __func__, strerror (errno));
@@ -176,7 +176,7 @@ vt_map_list_cache_reset (const vt_map_list_t *list, vt_error_t *err)
     cache->nmaps = list->nmaps;
   }
 
-  memset (cache->results, 0, cache->nmaps * sizeof (float));
+  memset (cache->results, 0, cache->nmaps * sizeof (int));
   memset (cache->maps, 0, cache->nmaps * sizeof (int));
   return 0;
 }
@@ -214,7 +214,7 @@ vt_map_list_get_map_pos (const vt_map_list_t *list, const char *name)
   return -1;
 }
 
-float
+int
 vt_map_list_search (const vt_map_list_t *list, int pos,
   const vt_request_t *request, vt_error_t *err)
 {
@@ -248,7 +248,7 @@ vt_map_list_search (const vt_map_list_t *list, int pos,
   return cache->results[pos];
 }
 
-float
+int
 vt_map_list_evaluate (const vt_map_list_t *list, const int *lineup,
   const vt_request_t *req, vt_error_t *err)
 {

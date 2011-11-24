@@ -44,7 +44,7 @@ int vt_rbl_check (vt_check_t *, vt_request_t *, vt_score_t *,
   vt_thread_pool_t *, vt_error_t *);
 void vt_rbl_worker (const vt_rbl_arg_t *, const SPF_server_t *, const char *);
 int vt_rbl_skip (vt_rbl_t *);
-float vt_rbl_max_weight (vt_rbl_t *);
-float vt_rbl_min_weight (vt_rbl_t *);
+int vt_rbl_max_weight (vt_rbl_t *);
+int vt_rbl_min_weight (vt_rbl_t *);
 
 #endif

@@ -84,7 +84,6 @@ vt_request_parse (vt_request_t *req, int fildes, vt_error_t *err)
       vt_error ("%s: not enough space in line buffer", __func__);
       return NULL;
     }
-
 again:
     nrd = read (fildes, buf+n, nlft);
     if (nrd < 0) {
@@ -113,15 +112,19 @@ again:
         }
       }
 
-      if (i && (n - i)) {
-        memmove (buf, buf+i, (n - 1));
-        n -= i;
+      if (i) {
+        if ((n - i)) {
+          memmove (buf, buf+i, (n - 1));
+          n -= i;
+        } else if (n < BUFLEN) {
+          goto done; /* end of request */
+        }
       }
     } else {
-      break; /* EOF */
+      break; /* end of file */
     }
   }
-
+done:
   return req;
 }
 

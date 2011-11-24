@@ -11,7 +11,7 @@
 
 typedef struct _vt_map vt_map_t;
 typedef int(*VT_MAP_OPEN_FUNC)(vt_map_t *, vt_error_t *);
-typedef float(*VT_MAP_SEARCH_FUNC)(vt_map_t *, const char *, size_t, vt_error_t *);
+typedef int(*VT_MAP_SEARCH_FUNC)(vt_map_t *, const char *, size_t, vt_error_t *);
 typedef int(*VT_MAP_CLOSE_FUNC)(vt_map_t *, vt_error_t *);
 typedef int(*VT_MAP_DESTROY_FUNC)(vt_map_t *, vt_error_t *);
 
@@ -47,9 +47,9 @@ int vt_map_list_destroy (vt_map_list_t *, int, vt_error_t *);
 int vt_map_list_cache_reset (const vt_map_list_t *, vt_error_t *);
 int vt_map_list_add_map (vt_map_list_t *, const vt_map_t *, vt_error_t *);
 int vt_map_list_get_map_pos (const vt_map_list_t *, const char *);
-float vt_map_list_search (const vt_map_list_t *, int, const vt_request_t *,
+int vt_map_list_search (const vt_map_list_t *, int, const vt_request_t *,
   vt_error_t *);
-float vt_map_list_evaluate (const vt_map_list_t *, const int *,
+int vt_map_list_evaluate (const vt_map_list_t *, const int *,
   const vt_request_t *, vt_error_t *);
 void vt_map_list_lock (vt_map_list_t *);
 void vt_map_list_unlock (vt_map_list_t *);

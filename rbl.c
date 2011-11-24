@@ -41,7 +41,7 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
   vt_rbl_weight_t *weight;
   vt_slist_t *root, *next;
   char *network, *type, *zone;
-  float points;
+  int points;
   int i, n;
   int ret;
 
@@ -66,7 +66,7 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
   }
 
   network = "127.0.0.0/8";
-  points = cfg_getfloat (sec, "weight");
+  points = vt_check_weight (cfg_getfloat (sec, "weight"));
   i = 0;
   n = cfg_size (sec, "in");
 
@@ -88,7 +88,7 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
 
     in = cfg_getnsec (sec, "in", i++);
     network = (char *)cfg_title (in);
-    points = cfg_getfloat (in, "weight");
+    points = vt_check_weight (cfg_getfloat (in, "weight"));
   } while (in);
 
   for (i=1, n=ceil ((MAX_BACK_OFF_TIME / BACK_OFF_TIME)); i < n; i<<=1)
@@ -380,10 +380,10 @@ vt_rbl_weight_sort (void *p1, void *p2)
   return 0;
 }
 
-float
+int
 vt_rbl_max_weight (vt_rbl_t *rbl)
 {
-  float n = 0.0;
+  int n = 0.0;
   vt_slist_t *p;
   vt_rbl_weight_t *q;
 
@@ -396,10 +396,10 @@ vt_rbl_max_weight (vt_rbl_t *rbl)
   return n;
 }
 
-float
+int
 vt_rbl_min_weight (vt_rbl_t *rbl)
 {
-  float n = 0.0;
+  int n = 0.0;
   vt_slist_t *p;
   vt_rbl_weight_t *q;
 

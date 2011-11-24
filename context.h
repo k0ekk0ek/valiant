@@ -20,9 +20,9 @@ struct _vt_context {
      that for a later version. */
   int syslog_prio;
   char *allow_resp;
-  float block_threshold;
+  int block_threshold;
   char *block_resp;
-  float delay_threshold;
+  int delay_threshold;
   char *delay_resp;
   char *error_resp; /* what to respond with, in case we encounter an error */
 

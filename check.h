@@ -23,8 +23,8 @@ struct _vt_check {
   unsigned int prio; /* indicates check cost */
   void *data; /* check specific information */
   int *maps;
-  float max_weight;
-  float min_weight;
+  int max_weight;
+  int min_weight;
   VT_CHECK_CHECK_FUNC check_func;
   VT_CHECK_DESTROY_FUNC destroy_func;
 };
@@ -50,5 +50,7 @@ struct _vt_check_type {
 int vt_check_sort (void *, void *);
 int vt_check_dynamic_pattern (const char *);
 char *vt_check_unescape_pattern (const char *);
+int vt_check_weight (float);
+int vt_check_types_init (cfg_t *, vt_check_type_t **, vt_error_t *);
 
 #endif

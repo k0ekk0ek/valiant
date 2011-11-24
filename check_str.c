@@ -56,20 +56,21 @@ vt_check_str_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
   int ret;
   vt_check_t *check = NULL;
   vt_check_str_t *data = NULL;
-
+vt_error ("%s (%d)", __func__, __LINE__);
   if (! (check = vt_check_create (list, sec, err)))
     goto FAILURE;
+vt_error ("%s (%d)", __func__, __LINE__);
   if (! (data = calloc (1, sizeof (vt_check_str_t)))) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     return NULL;
   }
-
+vt_error ("%s (%d)", __func__, __LINE__);
   check->data = (void *)data;
   data->member = vt_request_mbrtoid (cfg_getstr (sec, "member"));
   data->negate = cfg_getbool (sec, "negate") ? 1 : 0;
   data->nocase = cfg_getbool (sec, "nocase") ? 1 : 0;
-  data->weight = cfg_getfloat (sec, "weight");
+  data->weight = vt_check_weight (cfg_getfloat (sec, "weight"));
 
   pattern = cfg_getstr (sec, "pattern");
   if (vt_check_dynamic_pattern (pattern)) {

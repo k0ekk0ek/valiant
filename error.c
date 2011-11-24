@@ -68,7 +68,7 @@ vt_syslog_close (void)
 void
 vt_log (int prio, const char *fmt, va_list ap)
 {
-  if (prio > _vt_syslog_prio)
+  if (_vt_syslog_prio >= 0 && prio > _vt_syslog_prio)
     return;
 
   if (_vt_syslog_facility >= 0) {

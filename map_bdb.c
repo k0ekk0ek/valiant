@@ -5,6 +5,7 @@
 #include <string.h>
 
 /* valaint includes */
+#include "check.h"
 #include "conf.h"
 #include "map_bdb.h"
 #include "map_priv.h"
@@ -25,7 +26,7 @@ struct _vt_map_bdb {
 vt_map_t *vt_map_bdb_create (cfg_t *, vt_error_t *);
 void vt_map_bdb_error (const DB_ENV *, const char *, const char *);
 int vt_map_bdb_open (vt_map_t *, vt_error_t *);
-float vt_map_bdb_search (vt_map_t *, const char *, size_t, vt_error_t *);
+int vt_map_bdb_search (vt_map_t *, const char *, size_t, vt_error_t *);
 int vt_map_bdb_close (vt_map_t *, vt_error_t *);
 int vt_map_bdb_destroy (vt_map_t *, vt_error_t *);
 
@@ -118,7 +119,7 @@ vt_map_bdb_open (vt_map_t *map, vt_error_t *err)
   return 0;
 }
 
-float
+int
 vt_map_bdb_search (vt_map_t *map, const char *str, size_t len, vt_error_t *err)
 {
   DB *db;
@@ -152,7 +153,7 @@ vt_map_bdb_search (vt_map_t *map, const char *str, size_t len, vt_error_t *err)
       vt_panic ("%s: db->get: %s", __func__, db_strerror (ret));
   }
 
-  return res;
+  return vt_check_weight (res);
 }
 
 int

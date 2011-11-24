@@ -286,6 +286,10 @@ vt_cfg_parse (const char *path)
     CFG_SEC ("stage", stage_opts, CFGF_MULTI),
     CFG_STR ("bind_address", VT_CFG_BIND_ADDR, CFGF_NONE),
     CFG_STR ("port", VT_CFG_PORT, CFGF_NONE),
+    CFG_INT ("max_idle_threads", 10, CFGF_NONE),
+    CFG_INT ("max_tasks", 200, CFGF_NONE),
+    CFG_INT ("max_threads", 100, CFGF_NONE),
+    CFG_INT ("min_threads", 10, CFGF_NONE),
     CFG_STR ("allow_response", VT_CFG_ALLOW_RESP, CFGF_NONE),
     CFG_FLOAT ("block_threshold", VT_CFG_BLOCK_THRESHOLD, CFGF_NONE),
     CFG_STR ("block_response", VT_CFG_BLOCK_RESP, CFGF_NONE),
@@ -298,14 +302,14 @@ vt_cfg_parse (const char *path)
     CFG_STR ("syslog_priority", VT_CFG_SYSLOG_PRIO, CFGF_NONE),
     CFG_END ()
   };
-
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   cfg_t *cfg = cfg_init (opts, CFGF_NONE);
   cfg_set_error_function (cfg, vt_cfg_error);
   cfg_set_validate_func (cfg, "stage|check", vt_cfg_validate_check);
   cfg_set_validate_func (cfg, "stage", vt_cfg_validate_stage);
   cfg_set_validate_func (cfg, "syslog_facility", vt_cfg_validate_syslog_facility);
   cfg_set_validate_func (cfg, "syslog_priority", vt_cfg_validate_syslog_priority);
-
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   switch(cfg_parse(cfg, path)) {
     case CFG_FILE_ERROR:
     case CFG_PARSE_ERROR:

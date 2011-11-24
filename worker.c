@@ -60,6 +60,8 @@ vt_worker_resp (int fd, const char *resp)
 
   for (; write (fd, "\n", 1) == -1 && errno == EINTR; )
     ;
+
+  (void)close (fd);
 }
 
 void
@@ -119,7 +121,7 @@ vt_worker (void *arg)
   vt_map_list_cache_reset (ctx->maps, &err);
 
   if (! (store->request) && ! (store->request = vt_request_create (&ret)) ||
-      ! (store->score) && ! (store->score = vt_score_create (&ret)))
+      ! (store->score) && ! (store->score = vt_score_create (ctx->stats->ncntrs, &ret)))
   {
     vt_worker_resp (fd, ctx->error_resp);
     return;
@@ -143,7 +145,8 @@ vt_worker (void *arg)
         vt_worker_resp (fd, ctx->error_resp);
         return;
       }
-      continue; // skip
+      //continue; // skip // FIXME: map returns 0 because we have no default
+      // yet
     }
 
     for (chk_cur = stage->checks; chk_cur; chk_cur = chk_cur->next) {
@@ -156,7 +159,7 @@ vt_worker (void *arg)
           vt_worker_resp (fd, ctx->error_resp);
           return;
         }
-        continue; // skip
+        //continue; // skip // FIXME: see above
       }
 
       if (check->check_func (check, request, score, &err) != 0) {
@@ -178,7 +181,7 @@ vt_worker (void *arg)
      || vt_worker_weight_static (cur, min_gain, max_gain, max_bound, 0))
       break; /* score won't change */
   }
-
+fprintf (stderr, "%s (%d): %d\n", __func__, __LINE__, score->points);
   vt_stats_update (ctx->stats, score);
 
   if (ctx->block_threshold && score->points >= ctx->block_threshold)
@@ -187,6 +190,6 @@ vt_worker (void *arg)
     vt_worker_resp (fd, ctx->delay_resp);
   else
     vt_worker_resp (fd, ctx->allow_resp);
-
+  vt_score_reset (score);
   free (arg);
 }

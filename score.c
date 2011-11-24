@@ -8,16 +8,20 @@
 #include "score.h"
 
 vt_score_t *
-vt_score_create (vt_error_t *err)
+vt_score_create (unsigned int ncntrs, vt_error_t *err)
 {
   int ret;
   vt_score_t *score;
 
-  if (! (score = calloc (1, sizeof (vt_score_t)))) {
+  if (! (score = calloc (1, sizeof (vt_score_t))) ||
+      ! (score->cntrs = calloc (ncntrs, sizeof (int))))
+  {
     vt_set_error (err, VT_ERR_NOMEM);
-    vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
+    vt_error ("%s: %s", __func__, __LINE__, strerror (errno));
     goto FAILURE;
   }
+
+  score->ncntrs = ncntrs;
 
   switch ((ret = pthread_mutex_init (&score->lock, NULL))) {
     case 0:
@@ -106,7 +110,15 @@ vt_score_update (vt_score_t *score, unsigned int pos, int points)
   /* NOTE: Since every check has a unique identifier, it shouldn't be necessary
      to protect the results with a memory barrier. Again if this assumption is
      false, please notify me. */
-  score->cntrs[pos] = points ? 1 : 0;
+  if (score->ncntrs > 0)
+    score->cntrs[pos] = points ? 1 : 0;
+}
+
+void
+vt_score_reset (vt_score_t *score)
+{
+  score->points = 0;
+  memset (score->cntrs, 0, score->ncntrs * sizeof (int));
 }
 
 void

@@ -83,7 +83,7 @@ vt_check_static_pcre_create (const vt_map_list_t *list, cfg_t *sec,
   check->data = (void *)data;
   data->member = vt_request_mbrtoid (cfg_getstr (sec, "member"));
   data->negate = cfg_getbool (sec, "negate") ? 1 : 0;
-  data->weight = cfg_getfloat (sec, "weight");
+  data->weight = vt_check_weight (cfg_getfloat (sec, "weight"));
 
   if (! (pattern = vt_check_unescape_pattern (cfg_getstr (sec, "pattern")))) {
     vt_set_error (err, VT_ERR_NOMEM);
@@ -143,7 +143,7 @@ vt_check_dynamic_pcre_create (const vt_map_list_t *list, cfg_t *sec,
   check->data = (void *)data;
   data->member = vt_request_mbrtoid (cfg_getstr (sec, "member"));
   data->negate = cfg_getbool (sec, "negate") ? 1 : 0;
-  data->weight = cfg_getfloat (sec, "weight");
+  data->weight = vt_check_weight (cfg_getfloat (sec, "weight"));
 
   if (! (data->pattern = vt_cfg_getstrdup (sec, "pattern"))) {
     vt_set_error (err, VT_ERR_NOMEM);

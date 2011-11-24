@@ -65,15 +65,17 @@ vt_context_stage_create (vt_stats_t *stats,
     vt_set_error (err, lerr);
     goto FAILURE;
   }
-
+vt_error ("%s (%d)", __func__, __LINE__);
   for (i = 0, n = cfg_size (sec, "check"); i < n; i++) {
     if ((subsec = cfg_getnsec (sec, "check", i)) &&
         (type = cfg_getstr (subsec, "type")))
     {
+vt_error ("%s (%d): type: %s", __func__, __LINE__, type);
       for (j = 0, check = NULL; ! check && check_types[j]; j++) {
         if (strcmp (type, check_types[j]->name) == 0) {
           if (! (check = check_types[j]->create_check_func (maps, subsec, &lerr))) {
             vt_set_error (err, lerr);
+vt_error ("%s (%d): error: %d", __func__, __LINE__, lerr);
             goto FAILURE;
           }
         }
@@ -122,25 +124,29 @@ vt_context_stages_create (vt_stats_t *stats,
   vt_slist_t *cur, *next, *stages = NULL;
   vt_stage_t *stage = NULL;
 
+  stages = NULL;
+
   for (i = 0, n = cfg_size (cfg, "stage"); i < n; i++) {
     if ((sec = cfg_getnsec (cfg, "stage", i))) {
       if (! (stage = vt_context_stage_create (stats, sec, check_types, maps, &ret))) {
         vt_set_error (err, ret);
         goto FAILURE;
       }
+vt_error ("%s (%d)", __func__, __LINE__);
       if (! (next = vt_slist_append (stages, stage))) {
         vt_set_error (err, ENOMEM);
         (void)vt_stage_destroy (stage, 1, NULL);
         goto FAILURE;
       }
-      if (stages) {
+      if (! stages) {
+vt_error ("%s (%d)", __func__, __LINE__);
         stages = next;
       }
-
+vt_error ("%s (%d)", __func__, __LINE__);
       vt_stage_update (stage);
     }
   }
-
+vt_error ("%s (%d)", __func__, __LINE__);
   /* calculate stage weights */
   for (cur = stages; cur; cur = cur->next) {
     stage = (vt_stage_t *)cur->data;
@@ -196,13 +202,16 @@ vt_context_create (cfg_t *cfg,
   /* NOTE: syslog_facility and syslog_priority validated by vt_cfg_parse */
   ctx->syslog_facility = vt_syslog_facility (cfg_getstr (cfg, "syslog_facility"));
   ctx->syslog_prio = vt_syslog_priority (cfg_getstr (cfg, "syslog_priority"));
-  ctx->block_threshold = cfg_getfloat (cfg, "block_threshold");
-  ctx->delay_threshold = cfg_getfloat (cfg, "delay_threshold");
-
+  ctx->block_threshold = vt_check_weight (cfg_getfloat (cfg, "block_threshold"));
+  ctx->delay_threshold = vt_check_weight (cfg_getfloat (cfg, "delay_threshold"));
+fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   if (! (ctx->stats = vt_stats_create (err)) ||
       ! (ctx->maps = vt_context_map_list_create (cfg, map_types, err)) ||
       ! (ctx->stages = vt_context_stages_create (ctx->stats, cfg, check_types, ctx->maps, err)))
+    {
+vt_error ("%s (%d): error: %d", __func__, __LINE__, err);
     goto FAILURE;
+    }
 
   return ctx;
 FAILURE:
@@ -247,7 +256,7 @@ vt_context_destroy (vt_context_t *ctx, vt_error_t *err)
     /* maps */
     if (ctx->maps) {
       vt_map_list_destroy (ctx->maps, 1 /* maps */, NULL);
-      free (ctx->maps);
+      //free (ctx->maps);
     }
 
     memset (ctx, 0, sizeof (vt_context_t));

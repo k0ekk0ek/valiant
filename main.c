@@ -3,6 +3,7 @@
 /* system includes */
 #include <errno.h>
 #include <netdb.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -34,7 +35,7 @@ int
 main (int argc, char *argv[])
 {
   cfg_t *cfg;
-  char *path;
+  char *path = VT_CFG_CONFIG_FILE;
   int c;
   vt_context_t *ctx;
   vt_error_t err;
@@ -68,10 +69,15 @@ main (int argc, char *argv[])
 
   if (! (cfg = vt_cfg_parse (path)))
     vt_fatal ("cannot parse %s", path);
-  if (! (ctx = vt_context_create (cfg, map_types, check_types, &err)))
-    vt_fatal ("cannot create context");
 
-  daemonize (ctx);
+  if (! (ctx = vt_context_create (cfg, map_types, check_types, &err)))
+    vt_fatal ("cannot create context: %d", err);
+
+  /* initialize check types */
+  if (vt_check_types_init (cfg, check_types, &err) != 0)
+    vt_fatal ("cannot init check types");
+
+  //daemonize (ctx);
 
   /* open socket that we will listen on */
   struct sockaddr_storage their_addr;
@@ -92,13 +98,13 @@ main (int argc, char *argv[])
   listen(sockfd, 10);
 
   // drop priveleges
-
+  //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   // create workers
   vt_thread_pool_t *pool = vt_thread_pool_create ("worker", ctx->max_threads, &vt_worker, &err);
   if (! pool) {
     vt_panic ("couldn't create thread pool!");
   }
-
+  //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   // install signal handlers
 
   for (;;) {
@@ -109,7 +115,7 @@ main (int argc, char *argv[])
 
     arg->fd = newfd;
     arg->ctx = ctx;
-
+    //fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
     vt_thread_pool_task_push (pool, (void *)arg, &err);
   }
 

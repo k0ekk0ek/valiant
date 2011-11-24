@@ -97,22 +97,26 @@ thread_pool_worker (void *thread_pool)
   struct timespec wait;
   int ret, timed;
   void *res;
+  int lock;
 
   if (! (pool = thread_pool))
     return;
 
-  while (! pool->dead) {
-    if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
-      vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+  lock = 1;
 
+  while (! pool->dead) {
+    //vt_error ("%s (%d): lock", __func__, __LINE__);
+    if (lock && (ret = pthread_mutex_lock (&pool->lock)) != 0)
+      vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+    //vt_error ("%s (%d): locked", __func__, __LINE__);
     if ((arg = vt_thread_pool_task_shift (pool))) {
       pool->num_idle_threads--;
-
+      //vt_error ("%s (%d): unlock", __func__, __LINE__);
       if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
         vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
-
+      //vt_error ("%s (%d): unlocked", __func__, __LINE__);
       pool->function (arg);
-
+      lock = 1;
     } else {
       pool->num_idle_threads++;
 
@@ -124,19 +128,20 @@ thread_pool_worker (void *thread_pool)
         timed = 1;
         vt_thread_pool_time (&pool->wait, &wait);
       }
-
-      if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
-        vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
-
+//vt_error ("%s (%d): (cond) unlock", __func__, __LINE__);
+//      if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+//        vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+vt_error ("%s (%d): (cond) unlock", __func__, __LINE__);
       if (timed)
         ret = pthread_cond_timedwait (&pool->signal, &pool->lock, &wait);
       else
         ret = pthread_cond_wait (&pool->signal, &pool->lock);
-
+vt_error ("%s (%d): (cond) locked", __func__, __LINE__);
+      lock = 0;
       if (ret == ETIMEDOUT)
         break;
       if (ret)
-        vt_panic ("%s: pthread_cond_wait: %s", __func__, strerror (ret));
+        vt_panic ("%s: (cond) pthread_cond_wait: %s", __func__, strerror (ret));
     }
   }
 
@@ -151,18 +156,20 @@ vt_thread_pool_task_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
   int signal = 0;
   pthread_t worker;
   vt_slist_t *task;
-
+vt_error ("%s (%d): lock", __func__, __LINE__);
   if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
     vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+vt_error ("%s (%d): locked", __func__, __LINE__);
   if (THREADS_DEPLETED (pool) && QUEUE_FULL (pool)) {
     vt_set_error (err, VT_ERR_QFULL);
     vt_error ("%s: %s: queue full", __func__, pool->name);
-    return -1;
+    goto UNLOCK;
   }
+
   if (! (task = vt_slist_alloc ())) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: vt_slist_alloc: %s", __func__, strerror (errno));
-    return -1;
+    goto UNLOCK;
   }
 
   task->data = arg;
@@ -196,8 +203,10 @@ vt_thread_pool_task_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
   }
 
 UNLOCK:
+vt_error ("%s (%d): unlock", __func__, __LINE__);
   if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
     vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+vt_error ("%s (%d): unlocked", __func__, __LINE__);
   if (signal && (ret = pthread_cond_signal (&pool->signal)) != 0)
     vt_panic ("%s: pthread_cond_signal: %s", __func__, strerror (ret));
 

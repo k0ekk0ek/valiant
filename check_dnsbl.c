@@ -157,6 +157,7 @@ vt_check_dnsbl_worker (void *arg)
   if (client_address) {
     if (reverse_inet_addr (client_address, reverse, INET_ADDRSTRLEN) < 0)
       vt_panic ("%s: reverse_inet_addr: %s", __func__, strerror (errno));
+vt_error ("%s (%d): reverse: %s", __func__, __LINE__, reverse);
     if (snprintf (query, HOST_NAME_MAX, "%s.%s", reverse, rbl->zone) >= HOST_NAME_MAX)
       vt_panic ("%s: dnsbl query exceeded maximum hostname length", __func__);
 
