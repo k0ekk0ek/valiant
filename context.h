@@ -19,18 +19,24 @@ struct _vt_context {
   /* NOTE: prio could be bitmask so logging can be more granular, but let's safe
      that for a later version. */
   int syslog_prio;
+  char *allow_resp;
   float block_threshold;
   char *block_resp;
   float delay_threshold;
   char *delay_resp;
   char *error_resp; /* what to respond with, in case we encounter an error */
 
+  int max_threads;
+  int max_idle_threads;
+  int max_tasks;
+
   vt_slist_t *stages;
   vt_stats_t *stats;
   vt_map_list_t *maps;
 };
 
-vt_context_t *vt_context_create (vt_context_t *, cfg_t *, vt_error_t *);
+vt_context_t *vt_context_create (cfg_t *, vt_map_type_t **, vt_check_type_t **,
+  vt_error_t *);
 int vt_context_destroy (vt_context_t *, vt_error_t *);
 
 #endif

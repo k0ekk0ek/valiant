@@ -34,6 +34,8 @@ struct _vt_request {
   vt_buf_t rev_client_name;
 };
 
+vt_request_t *vt_request_create (vt_error_t *);
+void vt_request_destroy (vt_request_t *);
 vt_request_t *vt_request_parse (vt_request_t *, int, vt_error_t *);
 vt_request_member_t vt_request_mbrtoid (const char *);
 char *vt_request_mbrbyid (const vt_request_t *, vt_request_member_t);

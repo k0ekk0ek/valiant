@@ -78,7 +78,7 @@ vt_map_lineup_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
     for (i=0; i < n; i++) {
       name = cfg_getnstr (sec, "maps", i);
       if ((pos = vt_map_list_get_map_pos (list, name)) < 0) {
-        vt_set_errno (err, VT_ERR_BADCFG);
+        vt_set_error (err, VT_ERR_BADCFG);
         vt_error ("%s: invalid option 'maps' with value '%s'", __func__, name);
         goto FAILURE;
       }
@@ -159,7 +159,7 @@ vt_map_list_cache_reset (const vt_map_list_t *list, vt_error_t *err)
   if (! (cache = pthread_getspecific (vt_map_list_cache_key)))
     vt_panic ("%s: map cache unavailable", __func__);
 
-  ret = pthread_rwlock_rdlock (&(list->lock));
+  ret = pthread_rwlock_rdlock (&((vt_map_list_t *)list)->lock);
   if (ret != 0)
     vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
 
@@ -238,7 +238,7 @@ vt_map_list_search (const vt_map_list_t *list, int pos,
       vt_panic ("%s: invalid request member %d", __func__, map->member);
 
     if (! (res = map->search_func (map, str, len, &lerr)) && lerr != 0) {
-      vt_errno (err, lerr);
+      vt_set_error (err, lerr);
       return 0.0;
     }
 
@@ -261,7 +261,7 @@ vt_map_list_evaluate (const vt_map_list_t *list, const int *lineup,
       if ((res = vt_map_list_search (list, *pos, req, &ret)) || ret == 0) {
         return ret;
       } else {
-        vt_errno (err, ret);
+        vt_set_error (err, ret);
         return 0.0;
       }
     }

@@ -60,7 +60,7 @@ vt_check_str_create (const vt_map_list_t *list, cfg_t *sec, vt_error_t *err)
   if (! (check = vt_check_create (list, sec, err)))
     goto FAILURE;
   if (! (data = calloc (1, sizeof (vt_check_str_t)))) {
-    vt_set_errror (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     return NULL;
   }

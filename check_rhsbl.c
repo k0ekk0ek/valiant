@@ -55,7 +55,7 @@ vt_check_rhsbl_init (cfg_t *sec, vt_error_t *err)
 		max_tasks = (int)cfg_getint ((cfg_t *)sec, "max_tasks");
 
 		rhsbl_thread_pool = vt_thread_pool_create ("rhsbl", max_threads,
-			&vt_check_rhsbl_worker);
+			&vt_check_rhsbl_worker, NULL);
 
 		if (rhsbl_thread_pool == NULL)
       vt_fatal ("%s: vt_thread_pool_create: %s", __func__, strerror (errno));
@@ -83,7 +83,7 @@ vt_check_rhsbl_deinit (vt_error_t *err)
     vt_panic ("%s: pthread_mutex_trylock: %s", __func__, strerror (errno));
 
   if (rhsbl_thread_pool) {
-    vt_thread_pool_destroy (rhsbl_thread_pool);
+    (void)vt_thread_pool_destroy (rhsbl_thread_pool, NULL);
     rhsbl_thread_pool = NULL;
   }
 

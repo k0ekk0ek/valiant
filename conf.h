@@ -12,6 +12,7 @@
 #define VT_CFG_SYSLOG_IDENT "valiant"
 #define VT_CFG_SYSLOG_FACILITY "mail"
 #define VT_CFG_SYSLOG_PRIO "info"
+#define VT_CFG_ALLOW_RESP "DUNNO"
 #define VT_CFG_BLOCK_RESP "521 Bad reputation"
 #define VT_CFG_BLOCK_THRESHOLD (5.0)
 #define VT_CFG_DELAY_RESP "421 Questionable reputation, please try again later"

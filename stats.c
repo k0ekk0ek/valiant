@@ -35,7 +35,7 @@ vt_stats_create (vt_error_t *err)
   if ((ret = pthread_cond_init (&stats->signal, NULL)) != 0) {
     if (ret != ENOMEM)
       vt_fatal ("%s: pthread_cond_init: %s", __func__, strerror (ret));
-    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: pthread_cond_init: %s", __func__, strerror (ret));
     goto FAILURE_COND_INIT;
   }
@@ -157,14 +157,14 @@ vt_stats_print (vt_stats_t *stats, vt_error_t *err)
 
   max += (SIZE_MAX_CHARS + FMT_NUM_CHARS + 1);
   if (max > (ssize_t)(SIZE_MAX / ncntrs)) {
-    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: not enough memory to print statistics", __func__);
     goto UNLOCK;
   }
 
   ptr = NULL;
   if ((str = calloc (ncntrs, max)) == NULL) {
-    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     goto UNLOCK;
   }
@@ -174,7 +174,7 @@ vt_stats_print (vt_stats_t *stats, vt_error_t *err)
     if ((num = snprintf (ptr, max, FMT, max, cntr->name, cntr->hits)) < 0) {
       if (errno != ENOMEM)
         vt_panic ("%s: snprintf: %s", __func__, strerror (errno));
-      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_set_error (err, VT_ERR_NOMEM);
       vt_error ("%s: snprintf: %s", __func__, strerror (errno));
       goto UNLOCK;
     }

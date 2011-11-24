@@ -4,9 +4,9 @@
 /* system includes */
 /* valiant includes */
 
-typedef _vt_arg vt_arg_t;
+typedef struct _vt_worker_arg vt_worker_arg_t;
 
-struct _vt_arg {
+struct _vt_worker_arg {
   int fd;
   vt_context_t *ctx;
 };

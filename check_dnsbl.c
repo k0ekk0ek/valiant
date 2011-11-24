@@ -53,7 +53,7 @@ vt_check_dnsbl_init (cfg_t *sec, vt_error_t *err)
     max_idle_threads = cfg_getint (sec, "max_idle_threads");
     max_tasks = cfg_getint (sec, "max_tasks");
     dnsbl_thread_pool = vt_thread_pool_create ("dnsbl", max_threads,
-      &vt_check_dnsbl_worker);
+      &vt_check_dnsbl_worker, NULL);
 
 		if (dnsbl_thread_pool == NULL)
       vt_fatal ("%s: vt_thread_pool_create: %s", __func__, strerror (errno));
@@ -81,7 +81,7 @@ vt_check_dnsbl_deinit (vt_error_t *err)
     vt_panic ("%s: pthread_mutex_trylock: %s", __func__, strerror (errno));
 
   if (dnsbl_thread_pool) {
-    vt_thread_pool_destroy (dnsbl_thread_pool);
+    (void)vt_thread_pool_destroy (dnsbl_thread_pool, NULL);
     dnsbl_thread_pool = NULL;
   }
 

@@ -7,9 +7,8 @@
 #include <time.h>
 
 /* valiant includes */
-#include "consts.h"
+#include "error.h"
 #include "thread_pool.h"
-#include "utils.h"
 
 #define QUEUE_FULL(p) ((p)->max_tasks && (p)->max_tasks < (p)->num_tasks)
 #define THREADS_DEPLETED(p) ((p)->num_idle_threads < 1 && (p)->max_threads \
@@ -24,33 +23,41 @@ void vt_thread_pool_time (struct timespec *, struct timespec *);
 #define DEFAULT_MAX_TASKS (200)
 
 vt_thread_pool_t *
-vt_thread_pool_create (const char *name, int threads, void *func)
+vt_thread_pool_create (const char *name, unsigned int threads, void *func,
+  vt_error_t *err)
 {
+  char *fmt;
+  int ret;
   vt_thread_pool_t *pool;
 
-  if (! (pool = malloc0 (sizeof (vt_thread_pool_t))))
-    return NULL;
-
-  if (pthread_mutex_init (&pool->signal_lock, NULL)) {
-    goto failure;
+  if (! (pool = calloc (1, sizeof (vt_thread_pool_t)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto FAILURE_MUTEX_INIT;
+  }
+  if (name && ! (pool->name = strdup (name))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: strdup: %s", __func__, strerror (errno));
+    goto FAILURE_MUTEX_INIT;
+  }
+  if ((ret = pthread_mutex_init (&pool->lock, NULL)) != 0) {
+    fmt = "%s: pthread_mutex_init: %s";
+    if (ret != ENOMEM)
+      vt_fatal (fmt, __func__, strerror (ret));
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error (fmt, __func__, strerror (ret));
+    goto FAILURE_MUTEX_INIT;
+  }
+  if ((ret = pthread_cond_init (&pool->signal, NULL)) != 0) {
+    fmt = "%s: pthread_cond_init: %s";
+    if (ret != ENOMEM)
+      vt_fatal (fmt, __func__, strerror (ret));
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error (fmt, __func__, strerror (ret));
+    goto FAILURE_COND_INIT;
   }
 
-  if (pthread_mutex_init (&pool->lock, NULL)) {
-    pthread_mutex_destroy (&pool->signal_lock);
-    goto failure;
-  }
-
-  if (pthread_cond_init (&pool->signal, NULL)) {
-    pthread_mutex_destroy (&pool->lock);
-    pthread_mutex_destroy (&pool->signal_lock);
-    goto failure;
-  }
-
-  /* sanitize settings */
-  if (threads < 0)
-    threads = 0; /* unlimited */
-
-  pool->dead = false;
+  pool->dead = 0;
   pool->max_threads = threads;
   pool->num_threads = 0;
   pool->max_idle_threads = DEFAULT_MAX_IDLE_THREADS;
@@ -62,8 +69,9 @@ vt_thread_pool_create (const char *name, int threads, void *func)
   pool->function = func;
 
   return pool;
-
-failure:
+FAILURE_COND_INIT:
+  (void)pthread_mutex_destroy (&pool->lock);
+FAILURE_MUTEX_INIT:
   free (pool);
   return NULL;
 }
@@ -72,41 +80,38 @@ failure:
 #undef DEFAULT_MAX_IDLE_THREADS
 #undef DEFAULT_MAX_TASKS
 
-void
-vt_thread_pool_destroy (vt_thread_pool_t *pool)
+int
+vt_thread_pool_destroy (vt_thread_pool_t *pool, vt_error_t *err)
 {
   // IMPLEMENT... we do have to wait for all tasks to finish...
   // it's probably best to accept an argument that specifies whether to wait or
   // not!
-  return; // VT_SUCCESS;
+  return 0;
 }
 
 void *
 thread_pool_worker (void *thread_pool)
 {
   vt_thread_pool_t *pool;
-  void *param;
+  void *arg;
   struct timespec wait;
-  int ret;
+  int ret, timed;
   void *res;
 
   if (! (pool = thread_pool))
     return;
 
   while (! pool->dead) {
+    if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
+      vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
 
-    if (pthread_mutex_lock (&pool->lock))
-      vt_panic ("%s: %s: pthread_mutex_lock: %s", __func__, pool->name,
-        strerror (errno));
-
-    if ((param = vt_thread_pool_task_shift (pool))) {
+    if ((arg = vt_thread_pool_task_shift (pool))) {
       pool->num_idle_threads--;
 
-      if (pthread_mutex_unlock (&pool->lock))
-        vt_panic ("%s: %s: pthread_mutex_unlock: %s", __func__, pool->name,
-          strerror (errno));
+      if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+        vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
 
-      pool->function (param);
+      pool->function (arg);
 
     } else {
       pool->num_idle_threads++;
@@ -114,27 +119,24 @@ thread_pool_worker (void *thread_pool)
       if (! pool->max_idle_threads ||
             pool->max_idle_threads > pool->num_idle_threads)
       {
-        if (pthread_mutex_unlock (&pool->lock))
-          vt_panic ("%s: %s: pthread_mutex_unlock: %s", __func__, pool->name,
-            strerror (errno));
-
-        ret = pthread_cond_wait (&pool->signal, &pool->signal_lock);
-
+        timed = 0;
       } else {
+        timed = 1;
         vt_thread_pool_time (&pool->wait, &wait);
-
-        if (pthread_mutex_unlock (&pool->lock))
-          vt_panic ("%s: %s: pthread_mutex_unlock: %s", __func__, pool->name,
-            strerror (errno));
-
-        ret = pthread_cond_timedwait (&pool->signal, &pool->signal_lock, &wait);
       }
+
+      if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+        vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+
+      if (timed)
+        ret = pthread_cond_timedwait (&pool->signal, &pool->lock, &wait);
+      else
+        ret = pthread_cond_wait (&pool->signal, &pool->lock);
 
       if (ret == ETIMEDOUT)
         break;
       if (ret)
-        vt_panic ("%s: %s: pthread_cond_wait: %s", __func__, pool->name,
-          strerror (errno));
+        vt_panic ("%s: pthread_cond_wait: %s", __func__, strerror (ret));
     }
   }
 
@@ -142,20 +144,28 @@ thread_pool_worker (void *thread_pool)
 }
 
 int
-vt_thread_pool_task_push (vt_thread_pool_t *pool, void *param)
+vt_thread_pool_task_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
 {
-  bool signal;
+  char *fmt;
+  int ret, res = 0;
+  int signal = 0;
   pthread_t worker;
   vt_slist_t *task;
 
-  if (pthread_mutex_lock (&pool->lock))
-    return VT_ERR_SYS;
-  if (THREADS_DEPLETED (pool) && QUEUE_FULL (pool))
-    return VT_ERR_QFULL;
-  if ((task = vt_slist_alloc ()) == NULL)
-    return VT_ERR_NOMEM;
+  if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+  if (THREADS_DEPLETED (pool) && QUEUE_FULL (pool)) {
+    vt_set_error (err, VT_ERR_QFULL);
+    vt_error ("%s: %s: queue full", __func__, pool->name);
+    return -1;
+  }
+  if (! (task = vt_slist_alloc ())) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: vt_slist_alloc: %s", __func__, strerror (errno));
+    return -1;
+  }
 
-  task->data = param;
+  task->data = arg;
   if (pool->first_task) {
     pool->last_task->next = task;
     pool->last_task = task;
@@ -167,35 +177,43 @@ vt_thread_pool_task_push (vt_thread_pool_t *pool, void *param)
   pool->num_tasks++;
 
   if (pool->num_idle_threads > 0) {
-    signal = true;
+    signal = 1;
   } else if (! THREADS_DEPLETED (pool)) {
-    if (pthread_create (&worker, NULL, &thread_pool_worker, (void *)pool))
-      return VT_ERR_SYS;
+    ret = pthread_create (&worker, NULL, &thread_pool_worker, (void *)pool);
+    if (ret != 0) {
+      fmt = "%s: pthread_create: %s";
+      if (ret != EAGAIN)
+        vt_fatal (fmt, __func__, strerror (ret));
+      vt_set_error (err, VT_ERR_AGAIN);
+      vt_error (fmt, __func__, strerror (ret));
+      goto UNLOCK;
+    }
 
     pool->num_threads++;
     pool->num_idle_threads++;
-
-    signal = true;
+    res = 1;
+    signal = 1;
   }
 
-  if (pthread_mutex_unlock (&pool->lock))
-    return VT_ERR_SYS;
-  if (signal && pthread_cond_signal (&pool->signal))
-    return VT_ERR_SYS;
+UNLOCK:
+  if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+  if (signal && (ret = pthread_cond_signal (&pool->signal)) != 0)
+    vt_panic ("%s: pthread_cond_signal: %s", __func__, strerror (ret));
 
-  return VT_SUCCESS;
+  return res == 1 ? 0 : -1;
 }
 
 void *
 vt_thread_pool_task_shift (vt_thread_pool_t *pool)
 {
   vt_slist_t *task;
-  void *param = NULL;
+  void *arg = NULL;
 
   task = pool->first_task;
 
   if (task) {
-    param = task->data;
+    arg = task->data;
 
     if (task->next) {
       pool->first_task = task->next;
@@ -205,12 +223,10 @@ vt_thread_pool_task_shift (vt_thread_pool_t *pool)
     }
 
     pool->num_tasks--;
-
     free (task);
-
   }
 
-  return param;
+  return arg;
 }
 
 void

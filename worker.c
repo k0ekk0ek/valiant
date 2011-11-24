@@ -1,10 +1,20 @@
 /* system includes */
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* valiant includes */
+#include "check.h"
 #include "context.h"
 #include "error.h"
 #include "request.h"
+#include "stage.h"
+#include "worker.h"
+
+/* prototypes */
+void vt_worker_resp (int, const char *);
+void vt_worker_init (void);
+void vt_worker_deinit (void *);
 
 typedef struct _vt_worker_store vt_worker_store_t;
 
@@ -31,13 +41,13 @@ vt_worker_weight_static (float cur, float min_gain, float max_gain,
 }
 
 void
-vt_worker_resp (int sockfd, const char *resp)
+vt_worker_resp (int fd, const char *resp)
 {
   size_t i, n;
   ssize_t nwn;
 
   for (i = 0, n = strlen (resp); i < n; ) {
-    nwn = write (sockfd, resp+i, n-i);
+    nwn = write (fd, resp+i, n-i);
 
     if (nwn < (n-i) && errno != EINVAL) {
       vt_error ("%s (%d): write: %s", __func__, __LINE__, strerror (errno));
@@ -48,7 +58,7 @@ vt_worker_resp (int sockfd, const char *resp)
       i += nwn;
   }
 
-  for (; write (sockfd, "\n", 1) == -1 && errno == EINTR; )
+  for (; write (fd, "\n", 1) == -1 && errno == EINTR; )
     ;
 }
 
@@ -85,12 +95,13 @@ void
 vt_worker (void *arg)
 {
   float eval;
-  int where;
+  //int where;
   //vt_error_t ret;
-  int sockfd;
+  int fd;
+  int ret;
   vt_check_t *check;
   vt_context_t *ctx;
-  vt_errno_t err;
+  vt_error_t err;
   vt_request_t *request; // store in thread specific data
   vt_score_t *score; // store in thread specific data
   vt_slist_t *chk_cur, *stg_cur;
@@ -105,20 +116,20 @@ vt_worker (void *arg)
   if (! (store = pthread_getspecific (vt_worker_key)))
     vt_fatal ("%s (%d): thread specific data unavailable", __func__, __LINE__);
 
-  vt_map_list_cache_reset ();
+  vt_map_list_cache_reset (ctx->maps, &err);
 
   if (! (store->request) && ! (store->request = vt_request_create (&ret)) ||
       ! (store->score) && ! (store->score = vt_score_create (&ret)))
   {
-    vt_worker_resp (sockfd, ctx->error_resp);
+    vt_worker_resp (fd, ctx->error_resp);
     return;
   }
 
   request = store->request;
-  score = store->request;
+  score = store->score;
 
-  if (! (vt_request_parse (req, sockfd, &err))) {
-    vt_worker_resp (sockfd, ctx->error_resp);
+  if (! (vt_request_parse (request, fd, &err))) {
+    vt_worker_resp (fd, ctx->error_resp);
     return;
   }
 
@@ -148,7 +159,7 @@ vt_worker (void *arg)
         continue; // skip
       }
 
-      if (check->check_func (check, request, score, &error) != 0) {
+      if (check->check_func (check, request, score, &err) != 0) {
         vt_worker_resp (fd, ctx->error_resp);
         return;
       }
@@ -156,11 +167,11 @@ vt_worker (void *arg)
 
     vt_score_wait (score);
 
-    cur = score->points;
-    min_gain = cur + stage->min_weight_gained;
-    max_gain = cur + stage->max_weight_gained;
-    min_bound = ctx->delay_threshold;
-    max_bound = ctx->block_threshold;
+    float cur = score->points;
+    float min_gain = cur + stage->min_weight_diff;
+    float max_gain = cur + stage->max_weight_diff;
+    float min_bound = ctx->delay_threshold;
+    float max_bound = ctx->block_threshold;
 
     if (vt_worker_weight_static (cur, min_gain, max_gain, 0, min_bound)
      || vt_worker_weight_static (cur, min_gain, max_gain, min_bound, max_bound)
@@ -171,11 +182,11 @@ vt_worker (void *arg)
   vt_stats_update (ctx->stats, score);
 
   if (ctx->block_threshold && score->points >= ctx->block_threshold)
-    vt_worker_reply (sockfd, ctx->block_resp);
+    vt_worker_resp (fd, ctx->block_resp);
   else if (ctx->delay_threshold && score->points >= ctx->delay_threshold)
-    vt_worker_reply (sockfd, ctx->delay_resp);
+    vt_worker_resp (fd, ctx->delay_resp);
   else
-    vt_worker_reply (sockfd, ctx->allow_resp);
+    vt_worker_resp (fd, ctx->allow_resp);
 
   free (arg);
 }

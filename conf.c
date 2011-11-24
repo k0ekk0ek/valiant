@@ -2,12 +2,13 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <string.h>
-#include <syslog.h>
+
 
 /* valiant includes */
+#include "request.h"
 #include "conf.h"
 #include "error.h"
-#include "request.h"
+#include <syslog.h>
 #include "utils.h"
 
 unsigned int
@@ -283,6 +284,9 @@ vt_cfg_parse (const char *path)
     CFG_SEC ("map", map_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
     CFG_SEC ("type", type_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
     CFG_SEC ("stage", stage_opts, CFGF_MULTI),
+    CFG_STR ("bind_address", VT_CFG_BIND_ADDR, CFGF_NONE),
+    CFG_STR ("port", VT_CFG_PORT, CFGF_NONE),
+    CFG_STR ("allow_response", VT_CFG_ALLOW_RESP, CFGF_NONE),
     CFG_FLOAT ("block_threshold", VT_CFG_BLOCK_THRESHOLD, CFGF_NONE),
     CFG_STR ("block_response", VT_CFG_BLOCK_RESP, CFGF_NONE),
     CFG_FLOAT ("delay_threshold", VT_CFG_DELAY_THRESHOLD, CFGF_NONE),

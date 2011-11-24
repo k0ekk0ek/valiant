@@ -212,7 +212,7 @@ daemonize (vt_context_t *ctx)
   fdout = dup (fdin);
   fderr = dup (fdin);
 
-  vt_log_open (ctx->syslog_facility, ctx->syslog_prio);
+  vt_syslog_open ("valiant",ctx->syslog_facility, ctx->syslog_prio);
   if (fdin  != STDIN_FILENO  ||
       fdout != STDOUT_FILENO ||
       fderr != STDERR_FILENO)

@@ -1,4 +1,6 @@
 /* system includes */
+#include <stdio.h>
+#include <stdlib.h>
 #define SYSLOG_NAMES 1
 #include <syslog.h>
 
@@ -16,7 +18,7 @@ vt_set_error (vt_error_t *dst, vt_error_t src)
 }
 
 int
-vt_syslog_factility (const char *name)
+vt_syslog_facility (const char *name)
 {
   CODE *slc;
 
@@ -66,7 +68,7 @@ vt_syslog_close (void)
 void
 vt_log (int prio, const char *fmt, va_list ap)
 {
-  if (prio > _vt_syslog_priority)
+  if (prio > _vt_syslog_prio)
     return;
 
   if (_vt_syslog_facility >= 0) {

@@ -8,13 +8,13 @@
 #include "score.h"
 
 vt_score_t *
-vt_score_create (vt_errno_t *err)
+vt_score_create (vt_error_t *err)
 {
   int ret;
   vt_score_t *score;
 
   if (! (score = calloc (1, sizeof (vt_score_t)))) {
-    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
     goto FAILURE;
   }
@@ -23,7 +23,7 @@ vt_score_create (vt_errno_t *err)
     case 0:
       break;
     case ENOMEM:
-      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_set_error (err, VT_ERR_NOMEM);
       vt_error ("%s (%d): pthread_mutex_init: %s", __func__, __LINE__, strerror (ret));
       goto FAILURE;
     default:
@@ -34,7 +34,7 @@ vt_score_create (vt_errno_t *err)
     case 0:
       break;
     case ENOMEM:
-      vt_set_errno (err, VT_ERR_NOMEM);
+      vt_set_error (err, VT_ERR_NOMEM);
       vt_error ("%s (%d): pthread_cond_init: %s", __func__, __LINE__, strerror (ret));
       goto FAILURE_SIGNAL;
     default:

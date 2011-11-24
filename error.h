@@ -16,14 +16,15 @@
 #define VT_ERR_CONNFAILED (9)
 #define VT_ERR_NORETRY (10) /* permanent error */
 #define VT_ERR_RETRY (11) /* temporary error */
+#define VT_ERR_AGAIN (12)
 
 typedef int vt_error_t;
 
 void vt_set_error (vt_error_t *, vt_error_t);
 int vt_syslog_factility (const char *); /* convert syslog facility into code */
 int vt_syslog_priority (const char *); /* convert syslog priority into code */
-void vt_open_syslog (const char *, int, int);
-void vt_close_syslog (void);
+void vt_syslog_open (const char *, int, int);
+void vt_syslog_close (void);
 void vt_log (int, const char *, va_list);
 void vt_panic (const char *, ...);
 void vt_fatal (const char *, ...);

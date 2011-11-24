@@ -144,7 +144,7 @@ vt_rbl_check (vt_check_t *check, vt_request_t *request, vt_score_t *score,
     arg->request = request;
     arg->score = score;
 
-    vt_thread_pool_task_push (thread_pool, (void *)arg);
+    vt_thread_pool_task_push (thread_pool, (void *)arg, &lerr);
   }
 
   return 0;

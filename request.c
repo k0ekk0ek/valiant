@@ -9,7 +9,7 @@
 #include "request.h"
 
 vt_request_t *
-v_request_parse_line (vt_request_t *req, const char *str, size_t len,
+vt_request_parse_line (vt_request_t *req, const char *str, size_t len,
   vt_error_t *err)
 {
   vt_buf_t *mbr;
@@ -134,17 +134,15 @@ vt_request_create (vt_error_t *err)
   vt_request_t *req;
 
   if (! (req = calloc (1, sizeof (vt_request_t)))) {
-    vt_set_errno (err, VT_ERR_NOMEM);
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
   }
   return req;
 }
 
 void
-v_request_destroy (vt_request_t *req)
+vt_request_destroy (vt_request_t *req)
 {
-  assert (req);
-
   vt_buf_deinit (&req->helo_name);
   vt_buf_deinit (&req->sender);
   vt_buf_deinit (&req->sender_domain);
@@ -157,7 +155,7 @@ v_request_destroy (vt_request_t *req)
 }
 
 vt_request_member_t
-v_request_mbrtoid (const char *mbr)
+vt_request_mbrtoid (const char *mbr)
 {
   if (strncmp (mbr, "helo_name", 9) == 0)
     return VT_REQUEST_MEMBER_HELO_NAME;

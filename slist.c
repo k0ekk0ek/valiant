@@ -11,7 +11,7 @@
 vt_slist_t *
 vt_slist_alloc (void)
 {
-  return (vt_slist_t *)malloc0 (sizeof (vt_slist_t));
+  return (vt_slist_t *)calloc (1, sizeof (vt_slist_t));
 }
 
 vt_slist_t *
