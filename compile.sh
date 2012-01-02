@@ -1,7 +1,7 @@
 #!/bin/bash
 
 gcc -o valiant \
-	error.c buf.c request.c utils.c stats.c conf.c score.c map.c map_bdb.c check.c \
-	rbl.c check_dnsbl.c check_rhsbl.c check_map.c check_str.c check_pcre.c stage.c \
-	thread_pool.c slist.c context.c worker.c main.c \
-	-lrt -lpthread -lconfuse -lspf2 -lpcre -ldb
+	error.c buf.c request.c result.c utils.c state.c  \
+	dict.c rbl.c dict_dnsbl.c dict_spf.c dict_str.c dict_hash.c dict_pcre.c \
+	thread_pool.c slist.c main.c \
+	-lrt -lpthread -lconfuse -lspf2 -lpcre -ldb -lm

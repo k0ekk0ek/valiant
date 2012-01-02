@@ -1,4 +1,5 @@
 /* system includes */
+#include <assert.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -15,7 +16,7 @@
                          && (p)->max_threads < (p)->num_threads)
 
 /* prototypes */
-void *vt_thread_pool_task_shift (vt_thread_pool_t *);
+void *vt_thread_pool_shift (vt_thread_pool_t *);
 void vt_thread_pool_time (struct timespec *, struct timespec *);
 
 #define DEFAULT_MAX_THREADS (100)
@@ -23,7 +24,7 @@ void vt_thread_pool_time (struct timespec *, struct timespec *);
 #define DEFAULT_MAX_TASKS (200)
 
 vt_thread_pool_t *
-vt_thread_pool_create (const char *name, unsigned int threads, void *func,
+vt_thread_pool_create (void *user_data, unsigned int threads, void *func,
   vt_error_t *err)
 {
   char *fmt;
@@ -33,11 +34,6 @@ vt_thread_pool_create (const char *name, unsigned int threads, void *func,
   if (! (pool = calloc (1, sizeof (vt_thread_pool_t)))) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
-    goto FAILURE_MUTEX_INIT;
-  }
-  if (name && ! (pool->name = strdup (name))) {
-    vt_set_error (err, VT_ERR_NOMEM);
-    vt_error ("%s: strdup: %s", __func__, strerror (errno));
     goto FAILURE_MUTEX_INIT;
   }
   if ((ret = pthread_mutex_init (&pool->lock, NULL)) != 0) {
@@ -57,6 +53,7 @@ vt_thread_pool_create (const char *name, unsigned int threads, void *func,
     goto FAILURE_COND_INIT;
   }
 
+  pool->user_data = user_data;
   pool->dead = 0;
   pool->max_threads = threads;
   pool->num_threads = 0;
@@ -109,13 +106,13 @@ thread_pool_worker (void *thread_pool)
     if (lock && (ret = pthread_mutex_lock (&pool->lock)) != 0)
       vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
     //vt_error ("%s (%d): locked", __func__, __LINE__);
-    if ((arg = vt_thread_pool_task_shift (pool))) {
+    if ((arg = vt_thread_pool_shift (pool))) {
       pool->num_idle_threads--;
       //vt_error ("%s (%d): unlock", __func__, __LINE__);
       if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
         vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
       //vt_error ("%s (%d): unlocked", __func__, __LINE__);
-      pool->function (arg);
+      pool->function (arg, pool->user_data);
       lock = 1;
     } else {
       pool->num_idle_threads++;
@@ -149,20 +146,19 @@ vt_error ("%s (%d): (cond) locked", __func__, __LINE__);
 }
 
 int
-vt_thread_pool_task_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
+vt_thread_pool_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
 {
   char *fmt;
   int ret, res = 0;
   int signal = 0;
   pthread_t worker;
   vt_slist_t *task;
-vt_error ("%s (%d): lock", __func__, __LINE__);
+
   if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
     vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
-vt_error ("%s (%d): locked", __func__, __LINE__);
   if (THREADS_DEPLETED (pool) && QUEUE_FULL (pool)) {
     vt_set_error (err, VT_ERR_QFULL);
-    vt_error ("%s: %s: queue full", __func__, pool->name);
+    vt_error ("%s: queue full", __func__);
     goto UNLOCK;
   }
 
@@ -214,7 +210,7 @@ vt_error ("%s (%d): unlocked", __func__, __LINE__);
 }
 
 void *
-vt_thread_pool_task_shift (vt_thread_pool_t *pool)
+vt_thread_pool_shift (vt_thread_pool_t *pool)
 {
   vt_slist_t *task;
   void *arg = NULL;
@@ -249,6 +245,48 @@ vt_thread_pool_time (struct timespec *wait, struct timespec *tp)
   }
 
   return;
+}
+
+void
+vt_thread_pool_set_max_threads (vt_thread_pool_t *pool, unsigned int num)
+{
+  int ret;
+
+  assert (pool);
+
+  if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+  pool->max_threads = num;
+  if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+}
+
+void
+vt_thread_pool_set_max_idle_threads (vt_thread_pool_t *pool, unsigned int num)
+{
+  int ret;
+
+  assert (pool);
+
+  if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+  pool->max_idle_threads = num;
+  if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+}
+
+void
+vt_thread_pool_set_max_queued (vt_thread_pool_t *pool, unsigned int num)
+{
+  int ret;
+
+  assert (pool);
+
+  if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+  pool->max_tasks = num;
+  if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
 }
 
 #undef QUEUE_FULL

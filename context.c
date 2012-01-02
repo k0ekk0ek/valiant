@@ -9,178 +9,246 @@
 #include "error.h"
 #include "stage.h"
 
-vt_map_list_t *
-vt_context_map_list_create (cfg_t *cfg, vt_map_type_t **map_types,
-  vt_error_t *err)
+/* prototypes */
+int vt_context_get_dict_pos (const char *);
+
+int
+vt_context_dicts_init (vt_context_t *ctx,
+                       vt_dict_type_t **types,
+                       cfg_t *cfg,
+                       vt_error_t *err)
 {
-  cfg_t *sec;
-  char *type;
-  int i, j, n;
-  vt_map_list_t *list;
-  vt_map_t *map;
+  cfg_t *dict_sec, *type_sec;
+  char *title, *dict_type;
+  int dict_pos, ndicts, ntypes, type_pos;
+  vt_dict_t *dict, **dicts;
+  vt_dict_type_t *type;
 
-  if (! (list = vt_map_list_create (err)))
-    return NULL;
+  if (! (ndicts = cfg_size (cfg, "dict"))) {
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: no dicts", __func__);
+    return -1;
+  }
+  if (! (dicts = calloc (ndicts, sizeof (vt_dict_t *)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    return -1;
+  }
 
-  for (i = 0, n = cfg_size (cfg, "map"); i < n; i++) {
-    if ((sec = cfg_getnsec (cfg, "map", i)) &&
-        (type = cfg_getstr (sec, "type")))
-    {
-      for (j = 0; map_types[j]; j++) {
-        if (strcmp (type, map_types[j]->name) == 0) {
-          if (! (map = map_types[j]->create_map_func (sec, err)))
-            goto FAILURE;
-          if (vt_map_list_add_map (list, map, err) < 0) {
-            (void)map->destroy_func (map, NULL);
-            goto FAILURE;
-          }
+  for (dict_pos = 0; dict_pos < ndicts; dict_pos++)
+  {
+    dict_sec = cfg_getnsec (cfg, "dict", i);
+    if (dict_sec && (dict_type = cfg_getstr (dict_sec, "type"))) {
+      /* lookup generic configuration for given dictionary type */
+      title = (char *)cfg_title (dict_sec);
+      type = NULL;
+      type_sec = NULL;
+
+      for (type_pos = 0, ntypes = cfg_size (cfg, "type");
+           type_pos < ntypes;
+           type_pos++)
+      {
+        type_sec = cfg_getnsec (cfg, "type", type_pos);
+        if (type_sec && strcmp (dict_type, cfg_title (type_sec)) == 0)
           break;
-        }
       }
+
+      if (type_pos >= ntypes)
+        type_sec = NULL;
+
+      for (type = types; type; type++) {
+        if (strcmp ((*type)->name, dict_type) == 0)
+          break;
+      }
+
+      if (! type) /* programmer error */
+        vt_panic ("%s: unknown type %s for dict %s",
+          __func__, dict_type, title);
+
+      if (! (dict = vt_dict_create (type, type_sec, dict_sec, err)))
+        goto failure;
+
+      vt_debug ("%s: dict %s", __func__, title);
+      *(dicts + dict_pos) = dict;
     }
   }
 
-  return list;
-FAILURE:
-  (void)vt_map_list_destroy (list, 1, NULL);
-  return NULL;
+  *(dicts + ndicts) = NULL; /* null terminate */
+  ctx->dicts = dicts;
+  ctx->ndicts = ndicts;
+
+  return 0;
+failure:
+  for (dict_pos = 0; dict_pos < ndicts; dict_pos++) {
+    if ((dict = *(dicts + dict_pos)))
+      (void)vt_dict_destroy (dict, NULL);
+  }
+  free (dicts);
+  return -1;
 }
 
-vt_stage_t *
-vt_context_stage_create (vt_stats_t *stats,
-                         cfg_t *sec,
-                         vt_check_type_t **check_types,
-                         vt_map_list_t *maps,
-                         vt_error_t *err)
+vt_check_t *
+vt_check_create (vt_context_t *ctx, cfg_t *sec, vt_error_t *err)
 {
   cfg_t *subsec;
-  char *type;
-  int i, j, n;
-  int pos;
-  vt_error_t lerr;
+  int i, n;
+  int pos, *require;
+  char *name;
   vt_check_t *check;
-  vt_stage_t *stage;
 
-  if (! (stage = vt_stage_create (maps, sec, &lerr))) {
-    vt_set_error (err, lerr);
-    goto FAILURE;
+  if (! (check = calloc (1, sizeof (vt_check_t)))) {
+    vt_set_error (VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    return NULL;
   }
-vt_error ("%s (%d)", __func__, __LINE__);
-  for (i = 0, n = cfg_size (sec, "check"); i < n; i++) {
-    if ((subsec = cfg_getnsec (sec, "check", i)) &&
-        (type = cfg_getstr (subsec, "type")))
-    {
-vt_error ("%s (%d): type: %s", __func__, __LINE__, type);
-      for (j = 0, check = NULL; ! check && check_types[j]; j++) {
-        if (strcmp (type, check_types[j]->name) == 0) {
-          if (! (check = check_types[j]->create_check_func (maps, subsec, &lerr))) {
-            vt_set_error (err, lerr);
-vt_error ("%s (%d): error: %d", __func__, __LINE__, lerr);
-            goto FAILURE;
-          }
-        }
+
+  if ((name = cfg_name (sec)) && strcmp (name, "check") == 0) {
+    if (! (dict = cfg_getstr (sec, "dict"))) {
+      vt_set_error (err, VT_ERR_BADCFG);
+      vt_error ("%s: check without dict", __func__);
+      goto failure;
+    }
+    if ((pos = vt_context_get_dict_pos (ctx, dict)) < 0) {
+      vt_set_error (err, VT_ERR_BADCFG);
+      vt_error ("%s: check references undefined dict %s", __func__, dict);
+      goto failure;
+    }
+
+    check->dict = pos;
+  } else {
+    check->dict = -1;
+  }
+
+  n = cfg_size (sec, "require");
+  if ((check->ndepends = n) && ! (check->depends = calloc (n, sizeof (int)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto failure;
+  }
+
+  for (i = 0; i < n; i++) {
+    if ((dict = cfg_getnstr (cfg, "require", i))) {
+      if ((pos = vt_context_get_dict_pos (ctx, dict)) < 0) {
+        vt_set_error (err, VT_ERR_BADCFG);
+        vt_error ("%s: %s references unknown dict %s", __func__, name, dict);
+        goto failure;
       }
 
-      if (! check) {
-        vt_set_error (err, VT_ERR_BADCFG);
-        vt_error ("%s (%d): invalid option 'type' with value '%s' in section 'check'", __func__, __LINE__, type);
-        goto FAILURE;
-      }
-      if (vt_stage_add_check (stage, check, &lerr) < 0) {
-        vt_set_error (err, lerr);
-        (void)check->destroy_func (check, NULL);
-        goto FAILURE;
-      }
-      if ((pos = vt_stats_add_cntr (stats, check->name, &lerr)) < 0) {
-        vt_set_error (err, lerr);
-        goto FAILURE;
-      }
+      *(check->depends + i) = pos;
     }
   }
 
-  if (i < 1) {
-    vt_set_error (err, VT_ERR_BADCFG);
-    vt_error ("%s (%d): invalid section 'stage'");
-    goto FAILURE;
+  n = cfg_size (sec, "check");
+  if ((check->nchecks = n) && ! (check->checks = calloc (n, sizeof (vt_check_t *)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto failure;
   }
 
-  return stage;
-FAILURE:
-  (void)vt_stage_destroy (stage, 1, NULL);
+  for (i = 0; i < n; i++) {
+    if ((subsec = cfg_getnsec (sec, "check"))) {
+      if (! (*(check->checks + i) = vt_check_create (ctx, subsec, err)))
+        goto failure;
+    }
+  }
+
+  return check;
+failure:
+  (void)vt_check_destroy (check, NULL);
   return NULL;
 }
 
-vt_slist_t *
-vt_context_stages_create (vt_stats_t *stats,
-                          cfg_t *cfg,
-                          vt_check_type_t **check_types,
-                          vt_map_list_t *maps,
-                          vt_error_t *err)
+int
+vt_check_destroy (vt_check_t *check, vt_error_t *err)
 {
-  cfg_t *sec;
-  float min, max;
   int i, n;
-  int ret;
-  vt_slist_t *cur, *next, *stages = NULL;
-  vt_stage_t *stage = NULL;
 
-  stages = NULL;
+  if (check) {
+    if (check->checks) {
+      for (i = 0, n = check->nchecks; i < n; i++) {
+        if ((check->check + i) && vt_check_destroy (*(check->check + i), err) != 0)
+          return -1;
+      }
+      free (check->checks);
+    }
+    for (check->require)
+      free (check->require);
+    free (check);
+  }
+  return 0;
+}
 
-  for (i = 0, n = cfg_size (cfg, "stage"); i < n; i++) {
-    if ((sec = cfg_getnsec (cfg, "stage", i))) {
-      if (! (stage = vt_context_stage_create (stats, sec, check_types, maps, &ret))) {
-        vt_set_error (err, ret);
-        goto FAILURE;
+int
+vt_context_checks_init (vt_context_t *ctx, cfg_t *cfg, vt_error_t *err)
+{
+  char *name;
+  cfg_t *sec;
+  cfg_opt_t *opt;
+  int i, n;
+  int no_stages;
+
+  if ((n = cfg_getsize (cfg, "stage"))) {
+    no_stages = 0;
+    /* checks may be defined without stage, but only if no stages are defined */
+    if (cfg_getsize (cfg, "check") > 0) {
+      vt_set_error (VT_ERR_BADCFG);
+      vt_error ("%s: one or more checks defined outside stage", __func__);
+      return -1;
+    }
+  } else if (cfg_getsize (cfg, "check")) {
+    no_stages = 1;
+    n = 1;
+  } else {
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: no check or stage definitions", __func__);
+    return -1;
+  }
+
+  ctx->nchecks = n;
+  ctx->checks = calloc (n, sizeof (vt_check_t *));
+  if (! ctx->checks) {
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    return -1;
+  }
+
+  if (no_stages) {
+    if (! (*(ctx->checks) = vt_check_create (ctx, cfg, err)))
+      goto failure;
+  } else {
+    for (i = 0; i < n; i++) {
+      if ((sec = cfg_getnsec (cfg, "stage", i))) {
+        if ((*(ctx->checks + i) = vt_check_create (ctx, cfg, err)))
+          goto failure;
       }
-vt_error ("%s (%d)", __func__, __LINE__);
-      if (! (next = vt_slist_append (stages, stage))) {
-        vt_set_error (err, ENOMEM);
-        (void)vt_stage_destroy (stage, 1, NULL);
-        goto FAILURE;
-      }
-      if (! stages) {
-vt_error ("%s (%d)", __func__, __LINE__);
-        stages = next;
-      }
-vt_error ("%s (%d)", __func__, __LINE__);
-      vt_stage_update (stage);
     }
   }
-vt_error ("%s (%d)", __func__, __LINE__);
-  /* calculate stage weights */
-  for (cur = stages; cur; cur = cur->next) {
-    stage = (vt_stage_t *)cur->data;
-    min = 0;
-    max = 0;
 
-    for (next = cur->next; next; next = next->next) {
-      min += ((vt_stage_t *)next->data)->min_weight;
-      max += ((vt_stage_t *)next->data)->max_weight;
+  return 0;
+failure:
+  if (ctx->checks) {
+    for (i = 0; i < ctx->nchecks; i++) {
+      if (*(ctx->checks + i))
+        (void)vt_check_destroy (*(ctx->checks + i));
     }
-
-    stage->min_weight_diff = min;
-    stage->max_weight_diff = max;
+    free (ctx->checks);
   }
-
-  return stages;
-FAILURE:
-  vt_slist_free (stages, &vt_stage_destroy_slist, 0);
-  return NULL;
+  ctx->checks = NULL;
+  ctx->nchecks = 0;
+  return -1;
 }
 
 vt_context_t *
-vt_context_create (cfg_t *cfg,
-                   vt_map_type_t **map_types,
-                   vt_check_type_t **check_types,
-                   vt_error_t *err)
+vt_context_create (cfg_t *cfg, vt_dict_type_t **types, vt_error_t *err)
 {
   char *str;
+  int i, n;
   vt_context_t *ctx = NULL;
 
   if (! (ctx = calloc (1, sizeof (vt_context_t)))) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s (%d): calloc: %s", __func__, __LINE__, strerror (errno));
-    goto FAILURE;
+    goto failure;
   }
 
   if (! (ctx->port = vt_cfg_getstrdup (cfg, "port")) ||
@@ -196,25 +264,21 @@ vt_context_create (cfg_t *cfg,
       vt_set_error (err, VT_ERR_BADCFG);
     else
       vt_set_error (err, VT_ERR_NOMEM);
-    goto FAILURE;
+    goto failure;
   }
 
   /* NOTE: syslog_facility and syslog_priority validated by vt_cfg_parse */
   ctx->syslog_facility = vt_syslog_facility (cfg_getstr (cfg, "syslog_facility"));
   ctx->syslog_prio = vt_syslog_priority (cfg_getstr (cfg, "syslog_priority"));
-  ctx->block_threshold = vt_check_weight (cfg_getfloat (cfg, "block_threshold"));
-  ctx->delay_threshold = vt_check_weight (cfg_getfloat (cfg, "delay_threshold"));
-fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
-  if (! (ctx->stats = vt_stats_create (err)) ||
-      ! (ctx->maps = vt_context_map_list_create (cfg, map_types, err)) ||
-      ! (ctx->stages = vt_context_stages_create (ctx->stats, cfg, check_types, ctx->maps, err)))
-    {
-vt_error ("%s (%d): error: %d", __func__, __LINE__, err);
-    goto FAILURE;
-    }
+  ctx->block_threshold = cfg_getfloat (cfg, "block_threshold");
+  ctx->delay_threshold = cfg_getfloat (cfg, "delay_threshold");
+
+  if (vt_context_dicts_init (ctx, types, err) != 0 ||
+      vt_context_checks_init (ctx, err) != 0)
+    goto failure;
 
   return ctx;
-FAILURE:
+failure:
   (void)vt_context_destroy (ctx, NULL);
   return NULL;
 }
@@ -239,25 +303,25 @@ vt_context_destroy (vt_context_t *ctx, vt_error_t *err)
       free (ctx->error_resp);
 
     /* stages/checks */
-    if (ctx->stages) {
-      for (cur = ctx->stages, next = NULL; cur; cur = next) {
-        (void)vt_stage_destroy ((vt_stage_t *)cur->data, 1 /* checks */, NULL);
-        next = cur->next;
-        free (cur);
-      }
-    }
+    //if (ctx->stages) {
+    //  for (cur = ctx->stages, next = NULL; cur; cur = next) {
+    //    (void)vt_stage_destroy ((vt_stage_t *)cur->data, 1 /* checks */, NULL);
+    //    next = cur->next;
+    //    free (cur);
+    //  }
+    //}
 
     /* stats */
-    if (ctx->stats) {
-      (void)vt_stats_destroy (ctx->stats, NULL);
-      free (ctx->stats);
-    }
+    //if (ctx->stats) {
+    //  (void)vt_stats_destroy (ctx->stats, NULL);
+    //  free (ctx->stats);
+    //}
 
     /* maps */
-    if (ctx->maps) {
-      vt_map_list_destroy (ctx->maps, 1 /* maps */, NULL);
-      //free (ctx->maps);
-    }
+    //if (ctx->maps) {
+    //  vt_map_list_destroy (ctx->maps, 1 /* maps */, NULL);
+    //  //free (ctx->maps);
+    //}
 
     memset (ctx, 0, sizeof (vt_context_t));
     return 0;

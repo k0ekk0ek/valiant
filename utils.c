@@ -161,61 +161,60 @@ pid_file_write (const char *path, pid_t pid)
 /*
  * after example in advanced programming in the unix environment
  */
-void
-daemonize (vt_context_t *ctx)
-{
-  int fdin, fdout, fderr;
-  pid_t pid;
-  struct rlimit rl;
-  int i;
+// void
+// daemonize (vt_context_t *ctx)
+// {
+  // int fdin, fdout, fderr;
+  // pid_t pid;
+  // struct rlimit rl;
+  // int i;
 
-  umask (0);
+  // umask (0);
 
-  if (getrlimit (RLIMIT_NOFILE, &rl) < 0)
-    vt_fatal ("cannot get file limit");
+  // if (getrlimit (RLIMIT_NOFILE, &rl) < 0)
+    // vt_fatal ("cannot get file limit");
 
-  if ((pid = pid_file_read (ctx->pid_file)) == (pid_t) -1) {
-    fprintf (stderr, "pid is %ld\n", pid);
-    if (errno != ENOENT)
-      vt_fatal ("cannot read %s: %s", ctx->pid_file, strerror (errno));
-  } else if (kill (pid, 0) == 0) {
-    fprintf (stderr, "running!\n");
-    vt_fatal ("already running");
-  } else if (unlink (ctx->pid_file) < 0) {
-    vt_fatal ("cannot remove %s: %s", ctx->pid_file, strerror (errno));
-  }
-//fprintf (stderr, "here!!!!\n");
-  /* evertyhing should be set up to daemonize */
+  // if ((pid = pid_file_read (ctx->pid_file)) == (pid_t) -1) {
+    // fprintf (stderr, "pid is %ld\n", pid);
+    // if (errno != ENOENT)
+      // vt_fatal ("cannot read %s: %s", ctx->pid_file, strerror (errno));
+  // } else if (kill (pid, 0) == 0) {
+    // fprintf (stderr, "running!\n");
+    // vt_fatal ("already running");
+  // } else if (unlink (ctx->pid_file) < 0) {
+    // vt_fatal ("cannot remove %s: %s", ctx->pid_file, strerror (errno));
+  // }
+// //fprintf (stderr, "here!!!!\n");
+  // /* evertyhing should be set up to daemonize */
 
-  if ((pid = fork ()) < 0) /* error */
-    vt_fatal ("cannot fork process: %s", strerror (errno));
-  if (pid > 0) /* parent */
-    exit (EXIT_SUCCESS);
-  if (setsid () == (pid_t) -1)
-    vt_fatal ("cannot become session leader");
-  if (pid_file_write (ctx->pid_file, (pid = getpid ())) == (pid_t) -1)
-    vt_fatal ("cannot write %s: %s", ctx->pid_file, strerror (errno));
+  // if ((pid = fork ()) < 0) /* error */
+    // vt_fatal ("cannot fork process: %s", strerror (errno));
+  // if (pid > 0) /* parent */
+    // exit (EXIT_SUCCESS);
+  // if (setsid () == (pid_t) -1)
+    // vt_fatal ("cannot become session leader");
+  // if (pid_file_write (ctx->pid_file, (pid = getpid ())) == (pid_t) -1)
+    // vt_fatal ("cannot write %s: %s", ctx->pid_file, strerror (errno));
 
-  /* Change working directory to / so we won't prevent file systems from being
-     unmounted. */
-  if (chdir ("/") < 0)
-    vt_fatal ("cannot change to root directory");
+  // /* Change working directory to / so we won't prevent file systems from being
+     // unmounted. */
+  // if (chdir ("/") < 0)
+    // vt_fatal ("cannot change to root directory");
 
-  // close all open file descriptors
-  if (rl.rlim_max == RLIM_INFINITY)
-    rl.rlim_max = 1024;
-  for (i=0; i < rl.rlim_max; i++)
-    close (i);
+  // // close all open file descriptors
+  // if (rl.rlim_max == RLIM_INFINITY)
+    // rl.rlim_max = 1024;
+  // for (i=0; i < rl.rlim_max; i++)
+    // close (i);
 
-  /* Attach STDIN, STDOUT, and STDERR to /dev/null. */
-  fdin = open ("/dev/null", O_RDWR);
-  fdout = dup (fdin);
-  fderr = dup (fdin);
+  // /* Attach STDIN, STDOUT, and STDERR to /dev/null. */
+  // fdin = open ("/dev/null", O_RDWR);
+  // fdout = dup (fdin);
+  // fderr = dup (fdin);
 
-  vt_syslog_open ("valiant",ctx->syslog_facility, ctx->syslog_prio);
-  if (fdin  != STDIN_FILENO  ||
-      fdout != STDOUT_FILENO ||
-      fderr != STDERR_FILENO)
-    vt_fatal ("unexpected file descriptors %d %d %d", fdin, fdout, fderr);
-}
-
+  // vt_syslog_open ("valiant",ctx->syslog_facility, ctx->syslog_prio);
+  // if (fdin  != STDIN_FILENO  ||
+      // fdout != STDOUT_FILENO ||
+      // fderr != STDERR_FILENO)
+    // vt_fatal ("unexpected file descriptors %d %d %d", fdin, fdout, fderr);
+// }

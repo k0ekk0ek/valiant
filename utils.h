@@ -5,9 +5,9 @@
 #include <arpa/inet.h>
 
 /* valiant includes */
-#include "context.h"
+//#include "context.h"
 
 int reverse_inet_addr(char *, char *, socklen_t);
-void daemonize (vt_context_t *);
+//void daemonize (vt_context_t *);
 
 #endif

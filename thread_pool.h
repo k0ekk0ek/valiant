@@ -14,11 +14,11 @@ struct vt_thread_pool_task_struct {
   vt_thread_pool_task_t *next;
 };
 
-typedef void (*start_routine)(void *);
+typedef void (*start_routine)(void *, void *);
 typedef struct vt_thread_pool_struct vt_thread_pool_t;
 
 struct vt_thread_pool_struct {
-  const char *name;
+  void *user_data;
   int dead;
   int max_threads;
   int num_threads;
@@ -37,9 +37,12 @@ struct vt_thread_pool_struct {
   start_routine function; /* function to execute for every task */
 };
 
-vt_thread_pool_t *vt_thread_pool_create (const char *, unsigned int, void *,
+vt_thread_pool_t *vt_thread_pool_create (void *, unsigned int, void *,
   vt_error_t *);
 int vt_thread_pool_destroy (vt_thread_pool_t *, vt_error_t *);
-int vt_thread_pool_task_push (vt_thread_pool_t *, void *, vt_error_t *);
+int vt_thread_pool_push (vt_thread_pool_t *, void *, vt_error_t *);
+void vt_thread_pool_set_max_threads (vt_thread_pool_t *, unsigned int);
+void vt_thread_pool_set_max_idle_threads (vt_thread_pool_t *, unsigned int);
+void vt_thread_pool_set_max_queued (vt_thread_pool_t *, unsigned int);
 
 #endif

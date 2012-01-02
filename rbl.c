@@ -1,22 +1,21 @@
 /* system includes */
 #include <errno.h>
 #include <limits.h>
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 
 /* valiant includes */
-#include "conf.h"
 #include "rbl.h"
 #include "slist.h"
+#include "state.h"
 
 typedef struct _vt_rbl_weight vt_rbl_weight_t;
 
 struct _vt_rbl_weight {
   unsigned long network;
   unsigned long netmask;
-  int weight;
+  float weight;
 };
 
 /* prototypes */
@@ -26,13 +25,6 @@ int vt_rbl_weight_destroy (void *);
 int vt_rbl_weight_sort (void *, void *);
 int vt_rbl_weight (vt_rbl_t *, int);
 
-/* defines */
-#define TIME_FRAME (60)
-#define MAX_ERRORS (10)
-#define HALF_HOUR_IN_SECONDS (1800) /* minimum back off time */
-#define BACK_OFF_TIME HALF_HOUR_IN_SECONDS /* half hour in seconds */
-#define MAX_BACK_OFF_TIME (86400) /* 1 day in seconds */
-
 vt_rbl_t *
 vt_rbl_create (cfg_t *sec, vt_error_t *err)
 {
@@ -40,8 +32,8 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
   vt_rbl_t *rbl;
   vt_rbl_weight_t *weight;
   vt_slist_t *root, *next;
-  char *network, *type, *zone;
-  int points;
+  char *fmt, *network, *type, *zone;
+  float points;
   int i, n;
   int ret;
 
@@ -50,35 +42,52 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
   if (! (rbl = calloc (1, sizeof (vt_rbl_t)))) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
-    goto FAILURE;
+    goto failure;
   }
-  if ((ret = pthread_rwlock_init (&rbl->lock, NULL)) != 0) {
+  if (vt_state_init (&rbl->back_off, 1, err)) {
+    goto failure;
+  }
+  /* specifying debug value larger than one changes the behaviour of
+     SPF_server, don't do that */
+  if (! (rbl->spf_server = SPF_server_new (SPF_DNS_CACHE, 0))) {
+    fmt = "%s: SPF_server_new: %s";
+    if (errno != ENOMEM)
+      vt_panic (fmt, __func__, strerror (errno));
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error (fmt, __func__, strerror (errno));
+    goto failure;
+  }
+  /*if ((ret = pthread_rwlock_init (&rbl->lock, NULL)) != 0) {
+    fmt = "%s: pthread_rwlock_init: %s";
     if (ret != ENOMEM)
-      vt_panic ("%s: pthread_rwlock_init: %s", __func__, strerror (ret));
+      vt_panic (fmt, __func__, strerror (ret));
     vt_set_error (err, VT_ERR_NOMEM);
-    vt_error ("%s: pthread_rwlock_init: %s", __func__, strerror (ret));
-    goto FAILURE;
-  }
-  if (! (rbl->zone = vt_cfg_getstrdup (sec, "zone"))) {
+    vt_error (fmt, __func__, strerror (ret));
+    goto failure;
+  }*/
+
+  zone = cfg_getstr (sec, "zone");
+
+  if (! (rbl->zone = strdup (zone))) {
     vt_set_error (err, VT_ERR_NOMEM);
-    vt_error ("%s: vt_cfg_getstrdup: %s", __func__, strerror (errno));
-    goto FAILURE;
+    vt_error ("%s: strdup: %s", __func__, strerror (errno));
+    goto failure;
   }
 
   network = "127.0.0.0/8";
-  points = vt_check_weight (cfg_getfloat (sec, "weight"));
+  points = cfg_getfloat (sec, "weight");
   i = 0;
   n = cfg_size (sec, "in");
 
   do {
     if (! (weight = vt_rbl_weight_create (network, points, err)))
-      goto FAILURE;
+      goto failure;
 
     if ((next = vt_slist_append (root, weight)) == NULL) {
       vt_rbl_weight_destroy (weight);
       vt_set_error (err, VT_ERR_NOMEM);
       vt_error ("%s: slist_append: %s", __func__, strerror (errno));
-      goto FAILURE;
+      goto failure;
     }
 
     if (root == NULL)
@@ -88,17 +97,13 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
 
     in = cfg_getnsec (sec, "in", i++);
     network = (char *)cfg_title (in);
-    points = vt_check_weight (cfg_getfloat (in, "weight"));
+    points = cfg_getfloat (in, "weight");
   } while (in);
 
-  for (i=1, n=ceil ((MAX_BACK_OFF_TIME / BACK_OFF_TIME)); i < n; i<<=1)
-    ;
-
-  rbl->max_power = i;
   rbl->weights = vt_slist_sort (root, &vt_rbl_weight_sort);
 
   return rbl;
-FAILURE:
+failure:
   (void)vt_rbl_destroy (rbl, NULL);
   vt_slist_free (root, &vt_rbl_weight_destroy, 0);
   return NULL;
@@ -110,8 +115,11 @@ vt_rbl_destroy (vt_rbl_t *rbl, vt_error_t *err)
   int ret;
 
   if (rbl) {
-    if ((ret = pthread_rwlock_destroy (&rbl->lock)) != 0)
-      vt_panic ("%s: pthread_rwlock_destroy: %s", __func__, strerror (ret));
+    if (rbl->spf_server)
+      SPF_server_free (rbl->spf_server);
+
+    (void)vt_state_deinit (&rbl->back_off, NULL);
+
     if (rbl->zone)
       free (rbl->zone);
     if (rbl->weights)
@@ -119,55 +127,22 @@ vt_rbl_destroy (vt_rbl_t *rbl, vt_error_t *err)
     free (rbl);
   }
 
-  return 0;
+  return (0);
 }
 
 int
-vt_rbl_check (vt_check_t *check, vt_request_t *request, vt_score_t *score,
-  vt_thread_pool_t *thread_pool, vt_error_t *err)
-{
-  int ret, skip;
-  vt_error_t lerr = 0;
-  vt_rbl_t *rbl = (vt_rbl_t *)check->data;
-  vt_rbl_arg_t *arg;
-
-  if (! vt_rbl_skip (rbl)) {
-    vt_score_lock (score);
-
-    if (! (arg = calloc (1, sizeof (vt_rbl_arg_t)))) {
-      vt_set_error (err, VT_ERR_NOMEM);
-      vt_error ("%s: calloc: %s", __func__, strerror (errno));
-      return -1;
-    }
-
-    arg->check = check;
-    arg->request = request;
-    arg->score = score;
-
-    vt_thread_pool_task_push (thread_pool, (void *)arg, &lerr);
-  }
-
-  return 0;
-}
-
-void
-vt_rbl_worker (const vt_rbl_arg_t *arg, const SPF_server_t *spf_server,
-  const char *query)
+vt_rbl_check (vt_dict_t *dict, const char *query, vt_result_t *result,
+  vt_error_t *err)
 {
   int i;
-  vt_check_t *check;
   vt_rbl_t *rbl;
   vt_rbl_weight_t *weight, *heaviest;
-  vt_score_t *score;
   vt_slist_t *cur;
   SPF_dns_rr_t *dns_rr;
   unsigned long address;
 
-  check = arg->check;
-  rbl = (vt_rbl_t *)check->data;
-  score = arg->score;
-
-  dns_rr = SPF_dns_lookup (spf_server->resolver, query, ns_t_a, 0);
+  rbl = (vt_rbl_t *)dict->data;
+  dns_rr = SPF_dns_lookup (rbl->spf_server->resolver, query, ns_t_a, 0);
 
   switch (dns_rr->herrno) {
     case NO_DATA:
@@ -189,6 +164,7 @@ vt_rbl_worker (const vt_rbl_arg_t *arg, const SPF_server_t *spf_server,
         for (cur=rbl->weights; cur; cur=cur->next) {
           weight = (vt_rbl_weight_t *)cur->data;
 
+          // FIXME: must be done differently
           if ((address & weight->netmask) == (weight->network & weight->netmask)) {
             if (heaviest == NULL || heaviest->weight < weight->weight)
               heaviest = weight;
@@ -196,11 +172,13 @@ vt_rbl_worker (const vt_rbl_arg_t *arg, const SPF_server_t *spf_server,
         }
       }
 
-      if (heaviest)
-        vt_score_update (score, check->cntr, heaviest->weight);
+      if (heaviest) {
+        vt_error ("%s:%d: query: %s, weight: %f", __func__, __LINE__, query, heaviest->weight);
+        vt_result_update (result, dict->pos, heaviest->weight);
+      }
       break;
     case TRY_AGAIN: // SERVFAIL
-      vt_rbl_error (rbl);
+      vt_state_error (&rbl->back_off);
       break;
   }
 
@@ -209,96 +187,22 @@ vt_rbl_worker (const vt_rbl_arg_t *arg, const SPF_server_t *spf_server,
   return;
 }
 
-int
-vt_rbl_skip (vt_rbl_t *rbl)
-{
-  int ret, skip;
-  time_t now = time (NULL);
-
-  if ((ret = pthread_rwlock_rdlock (&rbl->lock)))
-    vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
-
-  skip = (rbl->back_off > now) ? 1 : 0;
-
-  if ((ret = pthread_rwlock_unlock (&rbl->lock)))
-    vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
-
-  return skip;
-}
-
-
-void
-vt_rbl_error (vt_rbl_t *rbl)
-{
-  int ret, power;
-  double multiplier;
-  time_t time_slot, now = time(NULL);
-
-  if ((ret = pthread_rwlock_wrlock (&rbl->lock)))
-    vt_panic ("%s: pthread_rwlock_wrlock: %s", __func__, strerror (ret));
-
-  if (now > rbl->back_off) {
-    /* error counter should only be increased if we're within the allowed time
-       frame. */
-    if (rbl->start > rbl->back_off && rbl->start > (now - TIME_FRAME)) {
-      if (++rbl->errors >= MAX_ERRORS) {
-        rbl->errors = 0;
-
-        // FIXME: update comment
-        /* current power must be updated, since the check might not have
-           failed for a long time. here. The general idea here is to get
-           the difference between back off time and now and divide it by the
-           number of seconds in BACK_OFF_TIME. That gives us the multiplier.
-           then we substrac the value of power either until power reaches 1
-           or the multiplier is smaller than one! */
-        power = rbl->power;
-        time_slot = (now - rbl->back_off);
-
-        if (rbl->power >= rbl->max_power) {
-          if (time_slot > MAX_BACK_OFF_TIME) {
-            power <<= 1;
-            time_slot -= MAX_BACK_OFF_TIME;
-          } else {
-            time_slot = 0;
-          }
-        }
-
-        multiplier = (time_slot / BACK_OFF_TIME);
-
-        for (; power > 1 && power < multiplier; power<<=1)
-          multiplier -= power;
-
-        // now: either power is 1... which is 2^0
-        // or: multiplier is less than 1!
-        // if multiplier is smaller than 1... we have our current power
-        // the one thing that is funny here is the max_power thing... if we've
-        // reached that we should first substract that one!
-        // we should update the power... it's only fair... right?
-        // we do that by doing a log... so... that's the current time
-        // minus the current back off time... divided by the back off time and
-        // then the log2 of the multiplier
-
-        /* now that the power is updated we increase it... and set the back
-           off time! */
-        rbl->power = power;
-
-        if (rbl->power < rbl->max_power) {
-          rbl->power >>= 1;
-          rbl->back_off = now + (BACK_OFF_TIME * rbl->power);
-        } else {
-          rbl->power = rbl->max_power;
-          rbl->back_off = now + MAX_BACK_OFF_TIME;
-        }
-      }
-    } else {
-      rbl->start = time (NULL);
-      rbl->errors = 1;
-    }
-  }
-
-  if ((ret = pthread_rwlock_unlock (&rbl->lock)))
-    vt_panic ("%s; pthread_rwlock_unlock: %s", __func__, strerror (ret));
-}
+//int
+//vt_rbl_skip (vt_rbl_t *rbl)
+//{
+//  int ret, skip;
+//  time_t now = time (NULL);
+//
+//  if ((ret = pthread_rwlock_rdlock (&rbl->lock)))
+//    vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
+//
+//  skip = (rbl->back_off > now) ? 1 : 0;
+//
+//  if ((ret = pthread_rwlock_unlock (&rbl->lock)))
+//    vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
+//
+//  return skip;
+//}
 
 vt_rbl_weight_t *
 vt_rbl_weight_create (const char *cidr, float points, vt_error_t *err)

@@ -17,6 +17,7 @@
 #define VT_ERR_NORETRY (10) /* permanent error */
 #define VT_ERR_RETRY (11) /* temporary error */
 #define VT_ERR_AGAIN (12)
+#define VT_ERR_BADREQUEST (13) /* bad request */
 
 typedef int vt_error_t;
 

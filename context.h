@@ -2,9 +2,18 @@
 #define VT_CONTEXT_H_INCLUDED 1
 
 /* valiant includes */
-#include "check.h"
 #include "slist.h"
 #include "stats.h"
+
+typedef struct _vt_check vt_check_t;
+
+struct _vt_check {
+  int dict; /* dict position in global list */
+  int *depends; /* dict positions in global list that are required to be non-zero */
+  int ndepends;
+  vt_check_t *checks;
+  int nchecks;
+}
 
 typedef struct _vt_context vt_context_t;
 
@@ -24,19 +33,22 @@ struct _vt_context {
   char *block_resp;
   int delay_threshold;
   char *delay_resp;
-  char *error_resp; /* what to respond with, in case we encounter an error */
+  char *error_resp;
 
   int max_threads;
   int max_idle_threads;
   int max_tasks;
 
-  vt_slist_t *stages;
-  vt_stats_t *stats;
-  vt_map_list_t *maps;
+  vt_dict_t **dicts;
+  unsigned int ndicts;
+
+  vt_check_t **checks;
+  unsigned int nchecks;
 };
 
-vt_context_t *vt_context_create (cfg_t *, vt_map_type_t **, vt_check_type_t **,
-  vt_error_t *);
+vt_context_t *vt_context_create (vt_dict_type_t **, cfg_t *, );
 int vt_context_destroy (vt_context_t *, vt_error_t *);
+//int vt_context_add_dict (vt_context_t *, vt_dict_t *, vt_error_t *);
+//int vt_context_get_dict_pos (vt_context_t *, const char *);
 
 #endif

@@ -160,7 +160,9 @@ vt_request_destroy (vt_request_t *req)
 vt_request_member_t
 vt_request_mbrtoid (const char *mbr)
 {
-  if (strncmp (mbr, "helo_name", 9) == 0)
+  if (! mbr)
+    return VT_REQUEST_MEMBER_NONE;
+  else if (strncmp (mbr, "helo_name", 9) == 0)
     return VT_REQUEST_MEMBER_HELO_NAME;
   else if (strncmp (mbr, "sender", 6) == 0)
     return VT_REQUEST_MEMBER_SENDER;
