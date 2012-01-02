@@ -65,6 +65,8 @@ main (int argc, char *argv[])
     CFG_END ()    
   };
 
+  //
+
   cfg_opt_t opts[] = {
     CFG_SEC ("dict", dict_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
     CFG_SEC ("type", type_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
