@@ -1,4 +1,5 @@
 /* system includes */
+#include <confuse.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,11 +7,21 @@
 /* valiant includes */
 #include "conf.h"
 #include "context.h"
-#include "error.h"
-#include "stage.h"
 
 /* prototypes */
-int vt_context_get_dict_pos (const char *);
+int vt_context_get_dict_pos (vt_context_t *, const char *);
+
+int
+vt_context_get_dict_pos (vt_context_t *ctx, const char *dict)
+{
+  int i;
+
+  for (i = 0; i < ctx->ndicts; i++) {
+    if (strcmp (ctx->dicts[i]->name, dict) == 0)
+      return i;
+  }
+  return -1;
+}
 
 int
 vt_context_dicts_init (vt_context_t *ctx,
@@ -22,7 +33,7 @@ vt_context_dicts_init (vt_context_t *ctx,
   char *title, *dict_type;
   int dict_pos, ndicts, ntypes, type_pos;
   vt_dict_t *dict, **dicts;
-  vt_dict_type_t *type;
+  vt_dict_type_t **type;
 
   if (! (ndicts = cfg_size (cfg, "dict"))) {
     vt_set_error (err, VT_ERR_BADCFG);
@@ -37,7 +48,7 @@ vt_context_dicts_init (vt_context_t *ctx,
 
   for (dict_pos = 0; dict_pos < ndicts; dict_pos++)
   {
-    dict_sec = cfg_getnsec (cfg, "dict", i);
+    dict_sec = cfg_getnsec (cfg, "dict", dict_pos);
     if (dict_sec && (dict_type = cfg_getstr (dict_sec, "type"))) {
       /* lookup generic configuration for given dictionary type */
       title = (char *)cfg_title (dict_sec);
@@ -65,10 +76,10 @@ vt_context_dicts_init (vt_context_t *ctx,
         vt_panic ("%s: unknown type %s for dict %s",
           __func__, dict_type, title);
 
-      if (! (dict = vt_dict_create (type, type_sec, dict_sec, err)))
+      if (! (dict = vt_dict_create (*type, type_sec, dict_sec, err)))
         goto failure;
 
-      vt_debug ("%s: dict %s", __func__, title);
+      vt_debug ("%s: dict: %s, pos: %d", __func__, title, dict_pos);
       *(dicts + dict_pos) = dict;
     }
   }
@@ -88,67 +99,43 @@ failure:
 }
 
 vt_check_t *
-vt_check_create (vt_context_t *ctx, cfg_t *sec, vt_error_t *err)
+vt_check_create (vt_context_t *ctx, cfg_t *cfg, vt_error_t *err)
 {
-  cfg_t *subsec;
   int i, n;
-  int pos, *require;
-  char *name;
+  char *dict;
   vt_check_t *check;
 
   if (! (check = calloc (1, sizeof (vt_check_t)))) {
-    vt_set_error (VT_ERR_NOMEM);
-    vt_error ("%s: calloc: %s", __func__, strerror (errno));
-    return NULL;
-  }
-
-  if ((name = cfg_name (sec)) && strcmp (name, "check") == 0) {
-    if (! (dict = cfg_getstr (sec, "dict"))) {
-      vt_set_error (err, VT_ERR_BADCFG);
-      vt_error ("%s: check without dict", __func__);
-      goto failure;
-    }
-    if ((pos = vt_context_get_dict_pos (ctx, dict)) < 0) {
-      vt_set_error (err, VT_ERR_BADCFG);
-      vt_error ("%s: check references undefined dict %s", __func__, dict);
-      goto failure;
-    }
-
-    check->dict = pos;
-  } else {
-    check->dict = -1;
-  }
-
-  n = cfg_size (sec, "require");
-  if ((check->ndepends = n) && ! (check->depends = calloc (n, sizeof (int)))) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     goto failure;
   }
 
-  for (i = 0; i < n; i++) {
-    if ((dict = cfg_getnstr (cfg, "require", i))) {
-      if ((pos = vt_context_get_dict_pos (ctx, dict)) < 0) {
+  dict = cfg_getstr (cfg, "dict");
+
+  if ((check->dict = vt_context_get_dict_pos (ctx, dict)) < 0) {
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: reference to unknown dict %s", __func__, dict);
+    goto failure;
+  }
+
+  /* support dependencies */
+  if ((check->ndepends = cfg_size (cfg, "depends"))) {
+    if (! (check->depends = calloc (check->ndepends, sizeof (int)))) {
+      vt_set_error (err, VT_ERR_NOMEM);
+      vt_error ("%s: calloc: %s", __func__, strerror (errno));
+      goto failure;
+    }
+  }
+
+  for (i = 0; i < check->ndepends; i++) {
+    if ((dict = cfg_getnstr (cfg, "depends", i))) {
+      check->depends[i] = vt_context_get_dict_pos (ctx, dict);
+      if (check->depends[i] < 0) {
         vt_set_error (err, VT_ERR_BADCFG);
-        vt_error ("%s: %s references unknown dict %s", __func__, name, dict);
+        vt_error ("%s: reference to unknown dict %s", __func__, dict);
         goto failure;
       }
-
-      *(check->depends + i) = pos;
-    }
-  }
-
-  n = cfg_size (sec, "check");
-  if ((check->nchecks = n) && ! (check->checks = calloc (n, sizeof (vt_check_t *)))) {
-    vt_set_error (err, VT_ERR_NOMEM);
-    vt_error ("%s: calloc: %s", __func__, strerror (errno));
-    goto failure;
-  }
-
-  for (i = 0; i < n; i++) {
-    if ((subsec = cfg_getnsec (sec, "check"))) {
-      if (! (*(check->checks + i) = vt_check_create (ctx, subsec, err)))
-        goto failure;
     }
   }
 
@@ -161,85 +148,142 @@ failure:
 int
 vt_check_destroy (vt_check_t *check, vt_error_t *err)
 {
-  int i, n;
-
   if (check) {
-    if (check->checks) {
-      for (i = 0, n = check->nchecks; i < n; i++) {
-        if ((check->check + i) && vt_check_destroy (*(check->check + i), err) != 0)
-          return -1;
-      }
-      free (check->checks);
-    }
-    for (check->require)
-      free (check->require);
+    if (check->depends)
+      free (check->depends);
     free (check);
   }
   return 0;
 }
 
-int
-vt_context_checks_init (vt_context_t *ctx, cfg_t *cfg, vt_error_t *err)
+vt_stage_t *
+vt_stage_create (vt_context_t *ctx, cfg_t *cfg, vt_error_t *err)
 {
-  char *name;
   cfg_t *sec;
-  cfg_opt_t *opt;
+  char *dict;
   int i, n;
-  int no_stages;
+  int invert, use_depends;
+  vt_stage_t *stage;
 
-  if ((n = cfg_getsize (cfg, "stage"))) {
-    no_stages = 0;
-    /* checks may be defined without stage, but only if no stages are defined */
-    if (cfg_getsize (cfg, "check") > 0) {
-      vt_set_error (VT_ERR_BADCFG);
-      vt_error ("%s: one or more checks defined outside stage", __func__);
-      return -1;
-    }
-  } else if (cfg_getsize (cfg, "check")) {
-    no_stages = 1;
-    n = 1;
-  } else {
-    vt_set_error (err, VT_ERR_BADCFG);
-    vt_error ("%s: no check or stage definitions", __func__);
-    return -1;
-  }
-
-  ctx->nchecks = n;
-  ctx->checks = calloc (n, sizeof (vt_check_t *));
-  if (! ctx->checks) {
-    vt_set_error (err, VT_ERR_BADCFG);
+  if (! (stage = calloc (1, sizeof (vt_stage_t)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
-    return -1;
+    goto failure;;
   }
 
-  if (no_stages) {
-    if (! (*(ctx->checks) = vt_check_create (ctx, cfg, err)))
-      goto failure;
-  } else {
-    for (i = 0; i < n; i++) {
-      if ((sec = cfg_getnsec (cfg, "stage", i))) {
-        if ((*(ctx->checks + i) = vt_check_create (ctx, cfg, err)))
+  stage->nchecks = cfg_size (cfg, "check");
+
+  if (! (stage->checks = calloc (stage->nchecks, sizeof (int)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto failure;
+  }
+
+  for (i = 0; i < n; i++) {
+    if ((sec = cfg_getnsec (cfg, "check", i))) {
+      if (! (stage->checks[i] = vt_check_create (ctx, sec, err)))
+        goto failure;
+    }
+  }
+
+  /* support dependencies */
+  if (strcmp (cfg_name (cfg), "stage") == 0) {
+    if ((stage->ndepends = cfg_size (cfg, "depends"))) {
+      if (! (stage->depends = calloc (stage->ndepends, sizeof (int)))) {
+        vt_set_error (err, VT_ERR_NOMEM);
+        vt_error ("%s: calloc: %s", __func__, strerror (errno));
+        goto failure;
+      }
+    }
+
+    for (i = 0; i < stage->ndepends; i++) {
+      if ((dict = cfg_getnstr (cfg, "depends", i))) {
+        stage->depends[i] = vt_context_get_dict_pos (ctx, dict);
+        if (stage->depends[i] < 0) {
+          vt_set_error (err, VT_ERR_BADCFG);
+          vt_error ("%s: reference to unknown dict %s", __func__, dict);
           goto failure;
+        }
       }
     }
   }
 
+  return stage;
+failure:
+  (void)vt_stage_destroy (stage, NULL);
+  return NULL;
+}
+
+int
+vt_stage_destroy (vt_stage_t *stage, vt_error_t *err)
+{
+  int i, ret;
+
+  if (stage) {
+    if (stage->checks) {
+      for (i = 0; i < stage->nchecks; i++) {
+        if (stage->checks[i] && vt_check_destroy (stage->checks[i], err) != 0)
+          return ret;
+      }
+      free (stage->checks);
+    }
+    if (stage->depends)
+      free (stage->depends);
+    free (stage);
+  }
+  return 0;
+}
+
+int
+vt_context_stages_init (vt_context_t *ctx, cfg_t *cfg, vt_error_t *err)
+{
+  cfg_t *sec;
+  vt_stage_t **stages;
+  int i, n;
+  int use_stages;
+
+  if ((n = cfg_size (cfg, "stage"))) {
+    use_stages = 1;
+  } else if (cfg_size (cfg, "check")) {
+    n = 1;
+    use_stages = 0;
+  } else {
+    vt_set_error (err, VT_ERR_BADCFG);
+    vt_error ("%s: specify at least one check", __func__);
+    return -1;
+  }
+
+  if (! (stages = calloc (n + 1, sizeof (vt_stage_t *)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    return -1;
+  }
+
+  if (use_stages) {
+    for (i = 0; i < n; i++) {
+      sec = cfg_getnsec (cfg, "stage", i);
+      if (! (stages[i] = vt_stage_create (ctx, sec, err)))
+        goto failure;
+    }
+  } else {
+    if (! (stages[0] = vt_stage_create (ctx, cfg, err)))
+      goto failure;
+  }
+
+  ctx->stages = stages;
+  ctx->nstages = n;
   return 0;
 failure:
-  if (ctx->checks) {
-    for (i = 0; i < ctx->nchecks; i++) {
-      if (*(ctx->checks + i))
-        (void)vt_check_destroy (*(ctx->checks + i));
-    }
-    free (ctx->checks);
+  for (i = 0; i < n; i++) {
+    if (stages[i])
+      (void)vt_stage_destroy (stages[i], NULL);
   }
-  ctx->checks = NULL;
-  ctx->nchecks = 0;
+  free (stages);
   return -1;
 }
 
 vt_context_t *
-vt_context_create (cfg_t *cfg, vt_dict_type_t **types, vt_error_t *err)
+vt_context_create (vt_dict_type_t **types, cfg_t *cfg, vt_error_t *err)
 {
   char *str;
   int i, n;
@@ -251,14 +295,14 @@ vt_context_create (cfg_t *cfg, vt_dict_type_t **types, vt_error_t *err)
     goto failure;
   }
 
-  if (! (ctx->port = vt_cfg_getstrdup (cfg, "port")) ||
-      ! (ctx->bind_address = vt_cfg_getstrdup (cfg, "bind_address")) ||
-      ! (ctx->pid_file = vt_cfg_getstrdup (cfg, "pid_file")) ||
-      ! (ctx->syslog_ident = vt_cfg_getstrdup (cfg, "syslog_identity")) ||
-      ! (ctx->allow_resp = vt_cfg_getstrdup (cfg, "allow_response")) ||
-      ! (ctx->block_resp = vt_cfg_getstrdup (cfg, "block_response")) ||
-      ! (ctx->delay_resp = vt_cfg_getstrdup (cfg, "delay_response")) ||
-      ! (ctx->error_resp = vt_cfg_getstrdup (cfg, "error_response")))
+  if (! (ctx->port = vt_cfg_getstr_dup (cfg, "port")) ||
+      ! (ctx->bind_address = vt_cfg_getstr_dup (cfg, "bind_address")) ||
+      ! (ctx->pid_file = vt_cfg_getstr_dup (cfg, "pid_file")) ||
+      ! (ctx->syslog_ident = vt_cfg_getstr_dup (cfg, "syslog_identity")) ||
+      ! (ctx->allow_resp = vt_cfg_getstr_dup (cfg, "allow_response")) ||
+      ! (ctx->block_resp = vt_cfg_getstr_dup (cfg, "block_response")) ||
+      ! (ctx->delay_resp = vt_cfg_getstr_dup (cfg, "delay_response")) ||
+      ! (ctx->error_resp = vt_cfg_getstr_dup (cfg, "error_response")))
   {
     if (errno == EINVAL)
       vt_set_error (err, VT_ERR_BADCFG);
@@ -273,8 +317,8 @@ vt_context_create (cfg_t *cfg, vt_dict_type_t **types, vt_error_t *err)
   ctx->block_threshold = cfg_getfloat (cfg, "block_threshold");
   ctx->delay_threshold = cfg_getfloat (cfg, "delay_threshold");
 
-  if (vt_context_dicts_init (ctx, types, err) != 0 ||
-      vt_context_checks_init (ctx, err) != 0)
+  if (vt_context_dicts_init (ctx, types, cfg, err) != 0 ||
+      vt_context_stages_init (ctx, cfg, err) != 0)
     goto failure;
 
   return ctx;

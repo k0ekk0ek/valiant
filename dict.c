@@ -14,12 +14,13 @@ typedef struct _vt_async_dict_arg vt_async_dict_arg_t;
 struct _vt_async_dict_arg {
   vt_request_t *request;
   vt_result_t *result;
+  int pos;
 };
 
 /* prototypes */
 vt_dict_t *vt_async_dict_create (vt_dict_t *, vt_dict_type_t *, cfg_t *,
   cfg_t *, vt_error_t *);
-int vt_async_dict_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_async_dict_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 void vt_async_dict_worker (void *, void *);
 int vt_async_dict_destroy (vt_dict_t *, vt_error_t *);
@@ -71,7 +72,6 @@ vt_dict_create_common (cfg_t *sec, vt_error_t *err)
     goto failure;
   }
 
-  dict->pos = -1;
   return dict;
 failure:
   (void)vt_dict_destroy_common (dict, NULL);
@@ -139,6 +139,7 @@ int
 vt_async_dict_check (vt_dict_t *async_dict,
                      vt_request_t *req,
                      vt_result_t *res,
+                     int pos,
                      vt_error_t *err)
 {
   vt_dict_t *dict;
@@ -159,6 +160,7 @@ vt_async_dict_check (vt_dict_t *async_dict,
 
   data->request = req;
   data->result = res;
+  data->pos = pos;
 
   if (vt_thread_pool_push (pool, (void *)data, err) != 0) {
     free (data);
@@ -175,6 +177,7 @@ vt_async_dict_worker (void *data, void *user_data)
   vt_dict_t *dict;
   vt_request_t *req;
   vt_result_t *res;
+  int pos;
 
   assert (data);
   assert (user_data);
@@ -182,9 +185,10 @@ vt_async_dict_worker (void *data, void *user_data)
   dict = (vt_dict_t *)user_data;
   req = ((vt_async_dict_arg_t *)data)->request;
   res = ((vt_async_dict_arg_t *)data)->result;
+  pos = ((vt_async_dict_arg_t *)data)->pos;
   free (data); /* cleanup */
 
-  (void)dict->check_func (dict, req, res, NULL);
+  (void)dict->check_func (dict, req, res, pos, NULL);
   vt_result_unlock (res);
 }
 

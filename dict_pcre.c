@@ -74,15 +74,15 @@ int vt_dict_dyn_pcre_destroy (vt_dict_t *, vt_error_t *);
 int vt_slist_pcre_free (void *);
 int vt_dict_multi_pcre_destroy (vt_dict_t *, vt_error_t *);
 int vt_pcre_check (float *, const char *, vt_pcre_t *, vt_error_t *);
-int vt_dict_stat_pcre_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_stat_pcre_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 size_t vt_dict_dyn_pcre_escaped_len (const char *);
 ssize_t vt_dict_dyn_pcre_escape (char *, size_t, const char *);
-int vt_dict_dyn_pcre_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_dyn_pcre_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 int vt_dict_multi_pcre_open (vt_dict_multi_pcre_t *data, vt_error_t *);
 vt_slist_t *vt_dict_multi_pcre_parse (const char *, vt_error_t *);
-int vt_dict_multi_pcre_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_multi_pcre_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 
 vt_dict_type_t _vt_dict_pcre_type = {
@@ -443,6 +443,7 @@ int
 vt_dict_stat_pcre_check (vt_dict_t *dict,
                          vt_request_t *req,
                          vt_result_t *res,
+                         int pos,
                          vt_error_t *err)
 {
   char *member;
@@ -462,7 +463,7 @@ vt_dict_stat_pcre_check (vt_dict_t *dict,
       weight = data->regex->weight;
     else
       weight = 0.0;
-    goto done;
+    goto update;
   }
 
   tmperr = 0;
@@ -471,8 +472,8 @@ vt_dict_stat_pcre_check (vt_dict_t *dict,
     return -1;
   }
 
-done:
-  vt_result_update (res, dict->pos, weight);
+update:
+  vt_result_update (res, pos, weight);
 vt_error ("%s:%d: weight: %f", __func__, __LINE__, weight);
   return 0;
 }
@@ -519,9 +520,10 @@ vt_dict_dyn_pcre_escape (char *str1, size_t len, const char *str2)
 
 int
 vt_dict_dyn_pcre_check (vt_dict_t *dict, 
-                         vt_request_t *req,
-                         vt_result_t *res,
-                         vt_error_t *err)
+                        vt_request_t *req,
+                        vt_result_t *res,
+                        int pos,
+                        vt_error_t *err)
 {
   char *member;
   char *buf, *str1, *str2, *ptr1, *ptr2, *ptr3;
@@ -545,7 +547,7 @@ vt_dict_dyn_pcre_check (vt_dict_t *dict,
       weight = data->weight;
     else
       weight = 0.0;
-    goto done;
+    goto update;
   }
 
   /* calculate buffer length needed to store pattern */
@@ -622,8 +624,8 @@ vt_dict_dyn_pcre_check (vt_dict_t *dict,
       vt_panic ("%s: pcre_exec: unrecoverable error (%d)", __func__, ret);
   }
 
-done:
-  vt_result_update (res, dict->pos, weight);
+update:
+  vt_result_update (res, pos, weight);
 vt_error ("%s:%d: weight: %f", __func__, __LINE__, weight);
   return 0;
 }
@@ -850,6 +852,7 @@ int
 vt_dict_multi_pcre_check (vt_dict_t *dict,
                           vt_request_t *req,
                           vt_result_t *res,
+                          int pos,
                           vt_error_t *err)
 {
   char *member;
@@ -895,8 +898,8 @@ vt_dict_multi_pcre_check (vt_dict_t *dict,
   }
 
 update:
-vt_error ("%s:%d: weight: %f", __func__, __LINE__, weight);
-  vt_result_update (res, dict->pos, weight);
+vt_error ("%s:%d: pos: %d, weight: %f", __func__, __LINE__, pos, weight);
+  vt_result_update (res, pos, weight);
 unlock:
   if ((ret = pthread_rwlock_unlock (&data->lock)) != 0)
     vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));

@@ -13,10 +13,10 @@
 vt_dict_t *vt_dict_rhsbl_create (vt_dict_type_t *, cfg_t *, cfg_t *,
   vt_error_t *);
 int vt_dict_rhsbl_destroy (vt_dict_t *, vt_error_t *);
-int vt_dict_rhsbl_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_rhsbl_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 
-vt_dict_type_t _vt_dict_rhsbl_type {
+vt_dict_type_t _vt_dict_rhsbl_type = {
   .name = "rhsbl",
   .create_func = &vt_dict_rhsbl_create
 };
@@ -72,6 +72,7 @@ int
 vt_dict_rhsbl_check (vt_dict_t *dict,
                      vt_request_t *req,
                      vt_result_t *res,
+                     int pos,
                      vt_error_t *err)
 {
   char *sender_domain;
@@ -91,9 +92,9 @@ vt_dict_rhsbl_check (vt_dict_t *dict,
     len = snprintf (query, HOST_NAME_MAX, "%s.%s", sender_domain, rbl->zone);
     if (len >= HOST_NAME_MAX)
       vt_panic ("%s: rhsbl query exceeded maximum hostname length", __func__);
-    return vt_rbl_check (dict, query, result, err);
+    return vt_rbl_check (dict, query, res, pos, err);
   } else {
-    vt_result_update (res, dict->pos, 0.0);
+    vt_result_update (res, pos, 0.0);
   }
   return 0;
 }

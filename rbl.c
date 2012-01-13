@@ -57,14 +57,6 @@ vt_rbl_create (cfg_t *sec, vt_error_t *err)
     vt_error (fmt, __func__, strerror (errno));
     goto failure;
   }
-  /*if ((ret = pthread_rwlock_init (&rbl->lock, NULL)) != 0) {
-    fmt = "%s: pthread_rwlock_init: %s";
-    if (ret != ENOMEM)
-      vt_panic (fmt, __func__, strerror (ret));
-    vt_set_error (err, VT_ERR_NOMEM);
-    vt_error (fmt, __func__, strerror (ret));
-    goto failure;
-  }*/
 
   zone = cfg_getstr (sec, "zone");
 
@@ -131,7 +123,7 @@ vt_rbl_destroy (vt_rbl_t *rbl, vt_error_t *err)
 }
 
 int
-vt_rbl_check (vt_dict_t *dict, const char *query, vt_result_t *result,
+vt_rbl_check (vt_dict_t *dict, const char *query, vt_result_t *result, int pos,
   vt_error_t *err)
 {
   int i;
@@ -174,7 +166,7 @@ vt_rbl_check (vt_dict_t *dict, const char *query, vt_result_t *result,
 
       if (heaviest) {
         vt_error ("%s:%d: query: %s, weight: %f", __func__, __LINE__, query, heaviest->weight);
-        vt_result_update (result, dict->pos, heaviest->weight);
+        vt_result_update (result, pos, heaviest->weight);
       }
       break;
     case TRY_AGAIN: // SERVFAIL
@@ -186,23 +178,6 @@ vt_rbl_check (vt_dict_t *dict, const char *query, vt_result_t *result,
 
   return;
 }
-
-//int
-//vt_rbl_skip (vt_rbl_t *rbl)
-//{
-//  int ret, skip;
-//  time_t now = time (NULL);
-//
-//  if ((ret = pthread_rwlock_rdlock (&rbl->lock)))
-//    vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
-//
-//  skip = (rbl->back_off > now) ? 1 : 0;
-//
-//  if ((ret = pthread_rwlock_unlock (&rbl->lock)))
-//    vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
-//
-//  return skip;
-//}
 
 vt_rbl_weight_t *
 vt_rbl_weight_create (const char *cidr, float points, vt_error_t *err)

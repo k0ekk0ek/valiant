@@ -38,7 +38,7 @@ struct _vt_dict_hash {
 vt_dict_t *vt_dict_hash_create (vt_dict_type_t *, cfg_t *, cfg_t *,
   vt_error_t *);
 int vt_dict_hash_destroy (vt_dict_t *, vt_error_t *);
-int vt_dict_hash_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_hash_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 int vt_dict_hash_open (vt_dict_hash_t *, vt_error_t *);
 void vt_map_bdb_error (const DB_ENV *, const char *, const char *);
@@ -242,6 +242,7 @@ int
 vt_dict_hash_check (vt_dict_t *dict,
                     vt_request_t *req,
                     vt_result_t *res,
+                    int pos,
                     vt_error_t *err)
 {
   char *member;
@@ -306,7 +307,7 @@ vt_dict_hash_check (vt_dict_t *dict,
   }
 
 update:
-  vt_result_update (res, dict->pos, weight);
+  vt_result_update (res, pos, weight);
 unlock:
   if ((ret = pthread_rwlock_unlock (&data->lock)) != 0)
     vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));

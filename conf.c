@@ -11,33 +11,31 @@
 #include <syslog.h>
 #include "utils.h"
 
-//unsigned int
-//vt_cfg_size_opts (cfg_t *cfg)
-//{
-//  unsigned int i = 0;
-//
-//  if (cfg->opts) {
-//    for (i=0; (cfg->opts)[i].type != CFGT_NONE; i++)
-//      ;
-//  }
-//
-//  return i;
-//}
-
-//cfg_opt_t *
-//vt_cfg_getnopt (cfg_t *cfg, unsigned int index)
-//{
-//  cfg_opt_t *opt = NULL;
-//  unsigned int n = vt_cfg_size_opts (cfg);
-//
-//  if (n && n >= index) {
-//    opt = &((cfg->opts)[index]);
-//  }
-//
-//  return opt;
-//}
-
 unsigned int
+vt_cfg_numopts (cfg_t *cfg)
+{
+  unsigned int n;
+
+  for (n = 0; (cfg->opts)[n].type != CFGT_NONE; n++)
+    /* do nothing */ ;
+
+  return n;
+}
+
+cfg_opt_t *
+vt_cfg_getoptnum (cfg_t *cfg, unsigned int index)
+{
+  cfg_opt_t *opt = NULL;
+  unsigned int n = vt_cfg_numopts (cfg);
+
+  if (n && n >= index)
+    opt = &((cfg->opts)[index]);
+
+  return opt;
+}
+
+
+int
 vt_cfg_opt_isset (cfg_opt_t *opt)
 {
   if (opt && opt->nvalues && ! (opt->flags & CFGF_RESET))
@@ -45,35 +43,35 @@ vt_cfg_opt_isset (cfg_opt_t *opt)
   return 0;
 }
 
-//char *
-//vt_cfg_getstrdup (cfg_t *cfg, const char *name)
-//{
-//  char *s1, *s2;
-//
-//  if ((s1 = cfg_getstr (cfg, name))) {
-//    s2 = strdup (s1);
-//  } else {
-//    s2 = NULL;
-//    errno = EINVAL;
-//  }
-//
-//  return s2;
-//}
+char *
+vt_cfg_getstr_dup (cfg_t *cfg, const char *name)
+{
+  char *s1, *s2;
 
-//char *
-//vt_cfg_titledup (cfg_t *cfg)
-//{
-//  char *s1, *s2 = NULL;
-//
-//  if ((s1 = (char *)cfg_title (cfg))) {
-//    s2 = strdup (s1);
-//  } else {
-//    s2 = NULL;
-//    errno = EINVAL;
-//  }
-//
-//  return s2;
-//}
+  if ((s1 = cfg_getstr (cfg, name))) {
+    s2 = strdup (s1);
+  } else {
+    s2 = NULL;
+    errno = EINVAL;
+  }
+
+  return s2;
+}
+
+char *
+vt_cfg_title_dup (cfg_t *cfg)
+{
+  char *s1, *s2 = NULL;
+
+  if ((s1 = (char *)cfg_title (cfg))) {
+    s2 = strdup (s1);
+  } else {
+    s2 = NULL;
+    errno = EINVAL;
+  }
+
+  return s2;
+}
 
 void
 vt_cfg_error (cfg_t *cfg, const char *fmt, va_list ap)
@@ -82,23 +80,18 @@ vt_cfg_error (cfg_t *cfg, const char *fmt, va_list ap)
 }
 
 int
-vt_cfg_validate_check (cfg_t *cfg, cfg_opt_t *opt)
-{
-  // IMPLEMENT
-}
-
-int
 vt_cfg_validate_dict_opts (cfg_t *sec, const char **opts, unsigned int nopts)
 {
+  cfg_t *subsec;
   cfg_opt_t *opt;
   char *name, *title;
-  int i, n, found;
+  int i, j, n, found;
 
   title = (char *)cfg_title (sec);
 
-  for (i = 0, n = vt_cfg_size_opts (sec); i < n; i++) {
-    opt = vt_cfg_getnopt (sec, i);
-    name = (char *)cfg_opt_name (subopt);
+  for (i = 0, n = vt_cfg_numopts (sec); i < n; i++) {
+    opt = vt_cfg_getoptnum (sec, i);
+    name = (char *)cfg_opt_name (opt);
     found = 0;
 
     for (j = 0; ! found && j < nopts && opts[j]; j++) {
@@ -106,8 +99,13 @@ vt_cfg_validate_dict_opts (cfg_t *sec, const char **opts, unsigned int nopts)
         found = 1;
     }
 
-    if (! found && opt->nvalues && ! (opt->flags & CFGF_RESET)) {
-      cfg_error (cfg, "invalid %s '%s' in dict section '%s'",
+    if (! found && vt_cfg_opt_isset (opt)) {
+      if (opt->type == CFGT_SEC) {
+        subsec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
+        if (vt_cfg_validate_dict_opts (subsec, NULL, 0) == 0)
+          continue;
+      }
+      cfg_error (sec, "invalid %s '%s' in dict section '%s'",
         ((opt->type == CFGT_SEC) ? "section" : "option"), name, title);
       return -1;
     }
@@ -117,11 +115,11 @@ vt_cfg_validate_dict_opts (cfg_t *sec, const char **opts, unsigned int nopts)
 }
 
 int
-vt_cfg_validate_check_rbl (cfg_t *cfg, cfg_opt_t *opt)
+vt_cfg_validate_dict_rbl (cfg_t *cfg, cfg_opt_t *opt)
 {
 	cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
   char *ptr, *title, *zone;
-  char *opts[] = {"in", "ipv4", "ipv6", "type", "zone", "weight", NULL};
+  const char *opts[] = {"in", "ipv4", "ipv6", "type", "zone", "weight", NULL};
   int nopts = 7;
 
   title = (char *)cfg_title (sec);
@@ -147,6 +145,8 @@ vt_cfg_validate_dict_hash (cfg_t *cfg, cfg_opt_t *opt)
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
   char *member, *path;
   char *title = (char *)cfg_title (sec);
+  const char *opts[] = {"invert", "member", "path", "type", "weight", NULL};
+  int nopts = 5;
   vt_request_member_t memberid;
 
   if (! (member = cfg_getstr (sec, "member")) || strlen (member) == 0) {
@@ -171,8 +171,8 @@ vt_cfg_validate_dict_pcre (cfg_t *cfg, cfg_opt_t *opt)
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
   char *member;
   char *title = (char *)cfg_title (sec);
-  char *opts[] = {"member", "invert", "nocase", "path", "pattern", "type",
-                  "weight", NULL};
+  const char *opts[] = {"member", "invert", "nocase", "path", "pattern", "type",
+                        "weight", NULL};
   int n, nopts = 7;
   vt_request_member_t memberid;
 
@@ -207,8 +207,8 @@ int
 vt_cfg_validate_dict_spf (cfg_t *cfg, cfg_opt_t *opt)
 {
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
-  char *opts[] = {"pass", "fail", "soft_fail", "neutral", "none", "perm_error",
-                  "temp_error", "type", "weight", NULL};
+  const char *opts[] = {"pass", "fail", "soft_fail", "neutral", "none",
+                        "perm_error", "temp_error", "type", "weight", NULL};
   int nopts = 9;
 
   return vt_cfg_validate_dict_opts (sec, opts, nopts);
@@ -219,8 +219,8 @@ vt_cfg_validate_dict_str (cfg_t *cfg, cfg_opt_t *opt)
 {
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
   char *member, *title;
-  char *opts[] = {"member", "invert", "nocase", "pattern", "type",
-                  "weight", NULL};
+  const char *opts[] = {"member", "invert", "nocase", "pattern", "type",
+                        "weight", NULL};
   int nopts = 6;
   vt_request_member_t memberid;
 
@@ -229,7 +229,7 @@ vt_cfg_validate_dict_str (cfg_t *cfg, cfg_opt_t *opt)
     cfg_error (cfg, "missing option 'member' in dict section '%s'", title);
     return -1;
   }
-  if ((memberid = vt_request_mbrtoid) == VT_REQUEST_NONE) {
+  if ((memberid = vt_request_mbrtoid (member)) == VT_REQUEST_MEMBER_NONE) {
     cfg_error (cfg, "invalid option 'member' in dict section '%s'", title);
     return -1;
   }
@@ -269,9 +269,29 @@ vt_cfg_validate_dict (cfg_t *cfg, cfg_opt_t *opt)
 }
 
 int
+vt_cfg_validate_check (cfg_t *cfg, cfg_opt_t *opt)
+{
+  /* user is allowed to define checks without defining stages, but only if no
+     stages are defined */
+  if (strcmp (cfg_name (cfg), "root") == 0 && cfg_size (cfg, "stage")) {
+    cfg_error (cfg, "invalid combination of check and stage sections");
+    return -1;
+  }
+
+  return 0;
+}
+
+int
 vt_cfg_validate_stage (cfg_t *cfg, cfg_opt_t *opt)
 {
   cfg_t *sec = cfg_opt_getnsec (opt, cfg_opt_size (opt) - 1);
+
+  /* user is allowed to define checks without defining stages, but only if no
+     stages are defined */
+  if (strcmp (cfg_name (cfg), "root") == 0 && cfg_size (cfg, "stage")) {
+    cfg_error (cfg, "invalid combination of check and stage sections");
+    return -1;
+  }
 
   if (! cfg_size (sec, "check")) {
     cfg_error (cfg, "missing section 'check' in stage section");
@@ -357,7 +377,7 @@ vt_cfg_parse (const char *path)
     CFG_SEC ("check", check_opts, CFGF_MULTI),
     CFG_STR_LIST ("depends", 0, CFGF_NONE),
     CFG_END ()
-  }
+  };
 
   cfg_opt_t opts[] = {
     CFG_SEC ("dict", dict_opts, CFGF_MULTI | CFGF_TITLE | CFGF_NO_TITLE_DUPES),
@@ -393,11 +413,11 @@ vt_cfg_parse (const char *path)
   cfg_set_validate_func (cfg, "syslog_priority", vt_cfg_validate_syslog_priority);
 
   // IMPLEMENT
-  //switch(cfg_parse(cfg, path)) {
-  //  case CFG_FILE_ERROR:
-  //  case CFG_PARSE_ERROR:
-  //    return NULL;
-  //}
+  switch(cfg_parse(cfg, path)) {
+    case CFG_FILE_ERROR:
+    case CFG_PARSE_ERROR:
+      return NULL;
+  }
 
   return cfg;
 }

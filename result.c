@@ -81,11 +81,8 @@ vt_result_destroy (vt_result_t *res, vt_error_t *err)
   if (res) {
     if (res->results) {
       for (i = 0; i < res->nresults; i++) {
-        if (res->results[i]) {
-          if ((res->results[i])->name)
-            free ((res->results[i])->name);
+        if (res->results[i])
           free (res->results[i]);
-        }
       }
       free (res->results);
     }
@@ -191,7 +188,7 @@ vt_result_unlock (vt_result_t *res)
     vt_fatal ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
 
   if (res->writers > 0)
-    result->writers--;
+    res->writers--;
   if (res->writers < 1)
     signal = 1;
 
@@ -212,7 +209,7 @@ vt_result_wait (vt_result_t *res)
     vt_fatal ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
 
   while (res->writers > 0) {
-    if ((ret = pthread_cond_wait (&res->signal, &result->lock)) != 0)
+    if ((ret = pthread_cond_wait (&res->signal, &res->lock)) != 0)
       vt_fatal ("%s: pthread_cond_wait: %s", __func__, strerror (ret));
   }
 

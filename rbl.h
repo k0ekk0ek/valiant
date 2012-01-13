@@ -25,7 +25,7 @@ struct _vt_rbl {
 
 vt_rbl_t *vt_rbl_create (cfg_t *sec, vt_error_t *);
 int vt_rbl_destroy (vt_rbl_t *, vt_error_t *);
-int vt_rbl_check (vt_dict_t *, const char *, vt_result_t *, vt_error_t *);
+int vt_rbl_check (vt_dict_t *, const char *, vt_result_t *, int, vt_error_t *);
 //int vt_rbl_skip (vt_rbl_t *);
 int vt_rbl_max_weight (vt_rbl_t *);
 int vt_rbl_min_weight (vt_rbl_t *);

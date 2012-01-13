@@ -24,9 +24,9 @@ struct _vt_dict_str {
 /* prototypes */
 vt_dict_t *vt_dict_str_create (vt_dict_type_t *, cfg_t *, cfg_t *, vt_error_t *);
 int vt_dict_str_destroy (vt_dict_t *, vt_error_t *);
-int vt_dict_stat_str_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_stat_str_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
-int vt_dict_dyn_str_check (vt_dict_t *, vt_request_t *, vt_result_t *,
+int vt_dict_dyn_str_check (vt_dict_t *, vt_request_t *, vt_result_t *, int,
   vt_error_t *);
 int vt_dict_str_weight (vt_dict_t *, int);
 
@@ -112,6 +112,7 @@ int
 vt_dict_stat_str_check (vt_dict_t *dict,
                         vt_request_t *req,
                         vt_result_t *res,
+                        int pos,
                         vt_error_t *err)
 {
   char *member;
@@ -151,7 +152,8 @@ vt_dict_stat_str_check (vt_dict_t *dict,
   }
 
 update:
-  vt_result_update (res, dict->pos, weight);
+  vt_debug ("%s: pos: %d, weight: %f", __func__, pos, weight);
+  vt_result_update (res, pos, weight);
   return 0;
 }
 
@@ -162,6 +164,7 @@ int
 vt_dict_dyn_str_check (vt_dict_t *dict,
                        vt_request_t *req,
                        vt_result_t *res,
+                       int pos,
                        vt_error_t *err)
 {
   char *member;
@@ -214,7 +217,7 @@ vt_dict_dyn_str_check (vt_dict_t *dict,
   }
 
 update:
-  vt_result_update (res, dict->pos, data->weight);
+  vt_result_update (res, pos, data->weight);
   return 0;
 }
 
