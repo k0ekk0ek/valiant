@@ -868,7 +868,7 @@ vt_dict_multi_pcre_check (vt_dict_t *dict,
   assert (res);
   data = (vt_dict_multi_pcre_t *)dict->data;
   assert (data);
-
+vt_debug ("%s:%d: pos: %d", __func__, __LINE__, pos);
   if ((ret = pthread_rwlock_rdlock (&data->lock)) != 0)
     vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
 
@@ -880,7 +880,7 @@ vt_dict_multi_pcre_check (vt_dict_t *dict,
       weight = 0.0;
     goto update;
   }
-
+vt_debug ("%s:%d: member: %s", __func__, __LINE__, member);
   if ((ret = vt_dict_multi_pcre_open (data, &tmperr)) != 0) {
     vt_set_error (err, tmperr);
     goto unlock;

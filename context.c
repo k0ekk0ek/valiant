@@ -330,7 +330,8 @@ failure:
 int
 vt_context_destroy (vt_context_t *ctx, vt_error_t *err)
 {
-  vt_slist_t *cur, *next;
+  //vt_slist_t *cur, *next;
+  int i, n;
 
   if (ctx) {
     if (ctx->bind_address)
@@ -354,6 +355,21 @@ vt_context_destroy (vt_context_t *ctx, vt_error_t *err)
     //    free (cur);
     //  }
     //}
+    if (ctx->stages) {
+      for (i = 0; i < ctx->nstages; i++) {
+        if (ctx->stages[i])
+          (void)vt_stage_destroy (ctx->stages[i], NULL);
+      }
+      free (ctx->stages);
+    }
+
+    if (ctx->dicts) {
+      for (i = 0; i < ctx->ndicts; i++) {
+        if (ctx->dicts[i])
+          (void)vt_dict_destroy (ctx->dicts[i], NULL);
+      }
+      free (ctx->dicts);
+    }
 
     /* stats */
     //if (ctx->stats) {

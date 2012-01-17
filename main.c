@@ -1,7 +1,12 @@
 /* system includes */
+#include <assert.h>
 #include <confuse.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
+#include <netdb.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,25 +20,172 @@
 #include "dict_rhsbl.h"
 #include "dict_spf.h"
 #include "dict_str.h"
-#include "result.h"
+#include "thread_pool.h"
+#include "watchdog.h"
+#include "worker.h"
+
+#define VT_SELECT_TIMEOUT_SECONDS (2)
+#define VT_SELECT_TIMEOUT_MICROSECONDS (0)
+
+typedef struct _vt_cleanup_arg vt_cleanup_arg_t;
+
+struct _vt_cleanup_arg {
+  vt_context_t *context;
+  vt_thread_pool_t *workers;
+};
+
+/* prototypes */
+void help (const char *);
+void usage (const char *);
+void version (const char *);
+
+void *vt_cleanup_worker (void *);
+void vt_cleanup (vt_thread_pool_t *, vt_context_t *, int);
+
+void
+help (const char *prog)
+{
+  const char *fmt =
+  "Usage: %s <options>\n"
+  "\n"
+  "Options\n"
+  "\t-c, --config-file FILE\tread configuration from FILE"
+  "\t-h, --help\t\tshow help information\n"
+  "\t-V, --version\t\tcopyright and version information\n";
+
+  printf (fmt, prog);
+  exit (EXIT_SUCCESS);
+}
+
+void
+usage (const char *prog)
+{
+  const char *fmt =
+  "Usage: %s <options>\n"
+  "See %s --help for available options\n";
+
+  printf (fmt, prog, prog);
+  exit (EXIT_FAILURE);
+}
+
+void
+version (const char *prog)
+{
+  const char *fmt =
+  "%s version %s\n"
+  "Copyright (c) 2011 Jeroen Koekkoek\n"
+  "\n"
+  "COPYRIGHT\n";
+
+  printf (fmt, prog, "0.1");
+  exit (EXIT_SUCCESS);
+}
+
+void *
+vt_cleanup_worker (void *arg)
+{
+  vt_context_t *context;
+  vt_thread_pool_t *workers;
+
+  assert (arg);
+
+  context = ((vt_cleanup_arg_t *)arg)->context;
+  workers = ((vt_cleanup_arg_t *)arg)->workers;
+  free (arg);
+
+  (void)vt_thread_pool_destroy (workers, NULL);
+  (void)vt_context_destroy (context, NULL);
+
+  return NULL;
+}
+
+void
+vt_cleanup (vt_thread_pool_t *workers, vt_context_t *context, int async)
+{
+  int ret;
+  pthread_t thread;
+  vt_cleanup_arg_t *arg;
+
+  arg = NULL;
+  if (! async)
+    goto failure;
+  if (! (arg = calloc (1, sizeof (vt_cleanup_arg_t)))) {
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto failure;
+    
+  }
+
+  arg->context = context;
+  arg->workers = workers;
+
+  if ((ret = pthread_create (&thread, NULL, vt_cleanup_worker, (void *)arg)) < 0) {
+    vt_error ("%s: pthread_create: %s", __func__, strerror (ret));
+    goto failure;
+  }
+
+  return;
+failure:
+  if (arg)
+    free (arg);
+  // fine... need to do it ourselves
+  // handle errors
+}
 
 int
 main (int argc, char *argv[])
 {
-  cfg_t *config;
-  int i;
+  cfg_t *cfg;
+  char *prog;
+  char *config_file = "/etc/valiant/valiant.conf";
   vt_context_t *ctx;
-  vt_check_t *check;
-  vt_dict_t *dict;
   vt_dict_type_t *types[7];
   vt_error_t err;
-  vt_result_t *res;
-  vt_stage_t *stage;
+  vt_thread_pool_t *pool;
 
-  if (argc < 2)
-    return 1;
+  if ((prog = strrchr (argv[0], '/')))
+    prog++;
+  else
+    prog = argv[0];
 
-  if (! (config = vt_cfg_parse (argv[1])))
+  /* parse command line options */
+  int c;
+  char *short_opts = "c:hV";
+  struct option long_opts[] = {
+    {"help", no_argument, NULL, 'h'},
+    {"version", no_argument, NULL, 'V'},
+    {"config-file", required_argument, NULL, 'c'}
+  };
+
+  for (; (c = getopt_long (argc, argv, short_opts, long_opts, NULL)) != EOF; ) {
+    switch (c) {
+      case 'c':
+        config_file = optarg;
+        break;
+      case 'h':
+        help (prog);
+        break; /* never reached */
+      case 'V':
+        version (prog);
+        break; /* never reached */
+      default:
+        usage (prog);
+        break; /* never reached */
+    }
+  }
+
+  /* it's important that wathchdog is initialized before any threads are
+     created because it sets the calling threads signal mask to ignore all
+     signals */
+  vt_watchdog_init ();
+
+
+
+
+
+
+
+  /* parse configuration file */
+  if (! (cfg = vt_cfg_parse (config_file)))
     return 1;
 
   types[0] = vt_dict_dnsbl_type ();
@@ -44,136 +196,128 @@ main (int argc, char *argv[])
   types[5] = vt_dict_str_type ();
   types[6] = NULL;
 
-  if (! (ctx = vt_context_create (types, config, &err)))
-    return 1;
-  if (! (res = vt_result_create (ctx->ndicts, &err)))
-    return 1;
-  // context and dicts initialized, parse request and run checks
+  if (! (ctx = vt_context_create (types, cfg, &err)))
+    vt_fatal ("cannot create context: %d", err);
 
-  vt_request_t *req = vt_request_create (NULL);
-  int fd = open ("request.txt", O_RDONLY);
 
-  vt_request_parse (req, fd, NULL);
 
-  //
-  //for (i = 0; i < context->ndicts; i++) {
-  //  vt_error ("%s:%d: pos: %d, pos in dict: %d", __func__, __LINE__, i, context->dicts[i]->pos);
-  //}
-  //
+  // drop priveleges
+  // fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
+  // create workers
 
-  /* it's impossible to checks more dicts per iteration than the maximum number
-     of dicts configured */
-  int found;
-  int run, j, k, checkno;
-  float points;
-  int stageno;
-  // find another name for tasks...
-  int ndicts, dictno, *dicts;
-  int depno, invert, pos;
-  int depend;
+  if (! (pool = vt_thread_pool_create ((void *)ctx, ctx->max_threads, &vt_worker, &err)))
+    return EXIT_FAILURE;
+  vt_thread_pool_set_max_idle_threads (pool, ctx->max_idle_threads);
+  vt_thread_pool_set_max_queued (pool, ctx->max_tasks);
+  vt_debug ("created thread pool");
+  /* open socket that we will listen on */
+  struct sockaddr_storage their_addr;
+  socklen_t addr_size;
+  struct addrinfo hints, *res;
+  int sock, conn;
+  //vt_worker_arg_t *arg;
+  int *task;
 
-  if (! (dicts = calloc (ctx->ndicts + 1, sizeof (int)))) {
-    vt_error ("%s: calloc: %s", __func__, strerror (errno));
-    return 1;
-  }
+  memset (&hints, 0, sizeof (hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = AI_PASSIVE;
 
-vt_debug ("stages: %d", ctx->nstages);
+  getaddrinfo (NULL, ctx->port, &hints, &res);
 
-  for (stageno = -1; stageno < ctx->nstages; stageno++) {
-    memset (dicts, 0, ctx->ndicts * sizeof (int));
-    ndicts = 0;
-vt_debug ("stage: %d", stageno);
-    /* run checks in current stage */
-    if (stageno >= 0) {
-      run = 1;
-      stage = ctx->stages[stageno];
-      /* don't run stage if dependencies failed */
-      for (depno = 0; run && depno < stage->ndepends; depno++) {
-        pos = stage->depends[depno];
+  sock = socket (res->ai_family, res->ai_socktype, res->ai_protocol);
+  bind(sock, res->ai_addr, res->ai_addrlen);
+  listen(sock, 10);
 
-        if (! res->results[pos]->ready)
-          vt_panic ("%s: dict %s not ready",
-            __func__, ctx->dicts[pos]->name);
-        if (res->results[pos]->points)
-          run = 1;
-      }
-//vt_debug ("%s:%d: run: %d", __func__, __LINE__, run);
-      if (run) {
-        for (checkno = 0; checkno < stage->nchecks; checkno++) {
-          check = stage->checks[checkno];
-          run = check->ndepends ? 0 : 1;
-//vt_debug ("%s:%d: run: %d", __func__, __LINE__, run);
-          for (depno = 0; ! run && depno < check->ndepends; depno++) {
-            pos = check->depends[depno];
+  fd_set fds;
+  struct timeval tv;
+  int dead, ret;
+  cfg_t *new_cfg;
+  vt_context_t *new_ctx;
+  vt_thread_pool_t *new_pool;
+  tv.tv_sec = VT_SELECT_TIMEOUT_SECONDS;
+  tv.tv_usec = VT_SELECT_TIMEOUT_MICROSECONDS;
 
-            if (! res->results[pos]->ready)
-              vt_panic ("%s: dict %s not ready",
-                __func__, ctx->dicts[pos]->name);
-            if (res->results[pos]->points)
-              run = 1;
-          }
+  for (dead = 0; ! dead; ) {
+    FD_ZERO (&fds);
+    FD_SET (sock, &fds);
 
-          for (dictno = 0; run && dictno < ndicts; dictno++) {
-            if (dicts[dictno] == check->dict)
-              run = 0;
-          }
-//vt_debug ("%s:%d: run: %d", __func__, __LINE__, run);
-          if (run) {
-            if (res->results[ check->dict ]->ready)
-              points += res->results[ check->dict ]->points;
-            else
-              dicts[ndicts++] = check->dict;
-          }
+    ret = select (sock+1, &fds, NULL, NULL, &tv);
+
+    /* always check if we received a signal or not */
+    switch (vt_watchdog_signal ()) {
+      case SIGTERM: /* terminate */
+        dead = 1;
+        break;
+      case SIGHUP: /* reload */
+        new_cfg = NULL;
+        new_ctx = NULL;
+        new_pool = NULL;
+
+        if (! (new_cfg = vt_cfg_parse (config_file))) {
+          vt_error ("%s: could not parse %s: reload aborted",
+            __func__, config_file);
+          goto failure_reload;
         }
-      }
+        if (! (new_ctx = vt_context_create (types, new_cfg, &err))) {
+          vt_error ("%s: could not create context: reload aborted", __func__);
+          goto failure_reload;
+        }
+
+        cfg_free (new_cfg);
+        new_cfg = NULL;
+
+        new_pool = vt_thread_pool_create ((void *)new_ctx,
+          new_ctx->max_threads, &vt_worker, &err);
+        if (! new_pool) {
+          vt_error ("%s: could not create workers: reload aborted", __func__);
+          goto failure_reload;
+        }
+        vt_thread_pool_set_max_idle_threads (new_pool, new_ctx->max_idle_threads);
+        vt_thread_pool_set_max_queued (new_pool, new_ctx->max_tasks);
+        vt_cleanup (pool, ctx, 1);
+        ctx = new_ctx;
+        pool = new_pool;
+        break;
+failure_reload:
+        if (new_cfg)
+          cfg_free (new_cfg);
+        if (new_ctx)
+          (void)vt_context_destroy (new_ctx, NULL);
+        if (new_pool)
+          (void)vt_thread_pool_destroy (new_pool, NULL);
+        break;
     }
 
-    if ((stageno + 1) < ctx->nstages) {
-      stage = ctx->stages[(stageno + 1)];
-
-      for (checkno = 0; checkno < stage->nchecks; checkno++) {
-        check = stage->checks[checkno];
-
-        for (depno = 0; depno < check->ndepends; depno++) {
-          pos = check->depends[depno];
-
-          for (dictno = 0, run = 1; run && dictno < ndicts; dictno++) {
-            if (dicts[dictno] == pos)
-              run = 0;
-          }
-          if (run && ! res->results[pos]->ready)
-            dicts[ndicts++] = pos;
-        }
-      }
-    }
-
-    /* run checks */
-    for (dictno = 0; dictno < ndicts; dictno++) {
-      pos = dicts[dictno];
-      fprintf (stderr, "%s: pos: %d, name: %s\n", __func__, pos, ctx->dicts[pos]->name);
-      vt_dict_check (ctx->dicts[pos], req, res, pos, &err);
-    }
-
-    vt_result_wait (res);
-
-    /* evaluate scores */
-    if (stageno >= 0) {
-      stage = ctx->stages[stageno];
-
-      for (checkno = 0; checkno < stage->nchecks; checkno++) {
-        pos = (stage->checks[checkno])->dict;
-
-        for (dictno = 0; dictno < ndicts; dictno++) {
-          if (pos == dicts[dictno]) {
-            points += res->results[pos]->points;
-            break;
-          }
-        }
-      }
+    if (ret < 0) {
+      if (errno != EINTR)
+        vt_fatal ("%s: select: %s", __func__, strerror (errno));
+      /* ignore */
+    } else if (ret > 0) {
+      if ((conn = accept (sock, (struct sockaddr *)&their_addr, &addr_size)) < 0)
+        vt_fatal ("%s: accept: %s", __func__, strerror (errno));
+      if (! (task = calloc (1, sizeof (int))))
+        vt_fatal ("%s: calloc: %s", __func__, strerror (errno));
+      *task = conn;
+      vt_thread_pool_push (pool, (void *)task, &err);
+      // FIXME: handle more errors etc!
     }
   }
 
-vt_debug ("points: %f", points);
+  // terminate
+  (void)close (sock); // probably needs to be done differently!
+  //
+  vt_cleanup (pool, ctx, 0);
+  // 0. close socket
+  //    if there is one... etc!
+  // 1. kill work force
+  // 2. kill context
+  // 3. exit
+  /* cleanup workers and context */
+  //vt_thread_pool_destroy (workers, &err);
 
-  return 0;
+  /* remove pid file */
+  // IMPLEMENT
+
+  return EXIT_SUCCESS;
 }

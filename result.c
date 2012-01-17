@@ -234,9 +234,15 @@ vt_result_reset (vt_result_t *res)
   assert (res);
 
   if (res->results) {
-    for (i = 0; res->results[i]; i++) {
-      (res->results[i])->ready = 0;
-      (res->results[i])->points = 0.0;
+    for (i = 0; i < res->nresults; i++) {
+      if (res->results[i]) {
+        vt_debug ("%s:%d: pos: %d, ready: %d, points: %f", __func__, __LINE__, i,
+        res->results[i]->ready, res->results[i]->points);
+        res->results[i]->ready = 0;
+        res->results[i]->points = 0.0;
+        vt_debug ("%s:%d: pos: %d, ready: %d, points: %f", __func__, __LINE__, i,
+        res->results[i]->ready, res->results[i]->points);
+      }
     }
   }
 }
