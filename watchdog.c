@@ -47,6 +47,7 @@ vt_watchdog (void *arg)
     sigwait (&sigset, &sig);
 
     switch (sig) {
+      case SIGINT:
       case SIGTERM:
         /* terminate */
         __sync_lock_test_and_set (&_signal, SIGTERM);

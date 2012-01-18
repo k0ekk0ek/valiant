@@ -96,72 +96,7 @@ vt_result_destroy (vt_result_t *res, vt_error_t *err)
 
   return 0;
 }
-//
-//int
-//vt_result_add_dict (vt_result_t *result, const char *name, vt_error_t *err)
-//{
-//  int pos;
-//  size_t nbytes;
-//  vt_dict_result_t *rslt, **rslts;
-//
-//  assert (result);
-//  assert (name);
-//
-//  if ((pos = vt_result_get_dict_pos (result, name)) >= 0)
-//    return pos; /* avoid duplicates */
-//
-//  if (! (rslt = calloc (1, sizeof (vt_dict_result_t)))) {
-//    vt_set_error (err, VT_ERR_NOMEM);
-//    vt_error ("%s: calloc: %s", __func__, strerror (errno));
-//    goto failure;
-//  }
-//  if (! (rslt->name = strdup (name))) {
-//    vt_set_error (err, VT_ERR_NOMEM);
-//    vt_error ("%s: strdup: %s", __func__, strerror (errno));
-//    goto failure;
-//  }
-//
-//  nbytes = (result->nresults + 2) * sizeof (vt_dict_result_t *);
-//  if (! (rslts = realloc (result->results, nbytes))) {
-//    vt_set_error (err, VT_ERR_NOMEM);
-//    vt_error ("%s: realloc: %s", __func__, strerror (errno));
-//    goto failure;
-//  }
-//
-//  pos = result->nresults;
-//  result->results = rslts;
-//  result->results[(pos)] = rslt;
-//  result->results[(pos + 1)] = NULL;
-//  result->nresults = (pos + 1);
-//
-//  return (result->nresults - 1);
-//failure:
-//  if (rslt) {
-//    if (rslt->name)
-//      free (rslt->name);
-//    free (rslt);
-//  }
-//  return (-1);
-//}
-//
-//int
-//vt_result_get_dict_pos (vt_result_t *result, const char *name)
-//{
-//  int i, pos = -1;
-//
-//  assert (result);
-//  assert (name);
-//
-//  if (result->results) {
-//    for (i = 0; pos < 0 && i < result->nresults; i++) {
-//      if (result->results[i] && strcmp ((result->results[i])->name, name) == 0)
-//        pos = i;
-//    }
-//  }
-//
-//  return (pos);
-//}
-//
+
 void
 vt_result_lock (vt_result_t *res)
 {
@@ -236,12 +171,8 @@ vt_result_reset (vt_result_t *res)
   if (res->results) {
     for (i = 0; i < res->nresults; i++) {
       if (res->results[i]) {
-        vt_debug ("%s:%d: pos: %d, ready: %d, points: %f", __func__, __LINE__, i,
-        res->results[i]->ready, res->results[i]->points);
         res->results[i]->ready = 0;
         res->results[i]->points = 0.0;
-        vt_debug ("%s:%d: pos: %d, ready: %d, points: %f", __func__, __LINE__, i,
-        res->results[i]->ready, res->results[i]->points);
       }
     }
   }

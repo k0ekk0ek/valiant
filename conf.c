@@ -173,7 +173,7 @@ vt_cfg_validate_dict_pcre (cfg_t *cfg, cfg_opt_t *opt)
   char *title = (char *)cfg_title (sec);
   const char *opts[] = {"member", "invert", "nocase", "path", "pattern", "type",
                         "weight", NULL};
-  int n, nopts = 7;
+  int n = 0, nopts = 7;
   vt_request_member_t memberid;
 
   if ((member = cfg_getstr (sec, "member")) == NULL) {
@@ -402,16 +402,18 @@ vt_cfg_parse (const char *path)
     CFG_STR ("syslog_priority", VT_CFG_SYSLOG_PRIO, CFGF_NONE),
     CFG_END ()
   };
-
+vt_error ("%s:%d", __func__, __LINE__);
   cfg_t *cfg = cfg_init (opts, CFGF_NONE);
+vt_error ("%s:%d", __func__, __LINE__);
   cfg_set_error_function (cfg, vt_cfg_error);
+vt_error ("%s:%d", __func__, __LINE__);
   cfg_set_validate_func (cfg, "dict", vt_cfg_validate_dict);
   cfg_set_validate_func (cfg, "check", vt_cfg_validate_check);
   cfg_set_validate_func (cfg, "stage|check", vt_cfg_validate_check);
   cfg_set_validate_func (cfg, "stage", vt_cfg_validate_stage);
   cfg_set_validate_func (cfg, "syslog_facility", vt_cfg_validate_syslog_facility);
   cfg_set_validate_func (cfg, "syslog_priority", vt_cfg_validate_syslog_priority);
-
+vt_error ("%s:%d", __func__, __LINE__);
   // IMPLEMENT
   switch(cfg_parse(cfg, path)) {
     case CFG_FILE_ERROR:

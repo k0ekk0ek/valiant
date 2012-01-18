@@ -15,7 +15,8 @@
 #include "request.h"
 #include "state.h"
 
-#define VT_DICT_PCRE_TIME_DIFF (300)
+// FIXME: increase interval, it's set to 60 for debugging purposes
+#define VT_DICT_PCRE_TIME_DIFF (60)
 
 typedef struct _vt_pcre vt_pcre_t;
 
@@ -330,7 +331,7 @@ vt_pcre_destroy (vt_pcre_t *expr, vt_error_t *err)
     if (expr->re)
       pcre_free (expr->re);
     if (expr->sd)
-      pcre_free (expr->re);
+      pcre_free (expr->sd);
     free (expr);
   }
   return 0;
@@ -643,15 +644,20 @@ vt_dict_multi_pcre_open (vt_dict_multi_pcre_t *data, vt_error_t *err)
   assert (data);
 
   now = time (NULL);
+  loaddb = 0;
   wrlock = 0;
 
 again:
-  if ((! data->regexes || ! data->ready) && ! vt_state_omit (&data->state))
+  if ((! data->regexes || ! data->ready) && ! vt_state_omit (&data->state)) {
+    vt_debug ("%s:%d: have regexes: %s, is ready: %s", __func__, __LINE__,
+      (data->regexes ? "yes" : "no"), (data->ready ? "yes" : "no"));
     loaddb = 1;
-  else
-    loaddb = 0;
+  }
 
-  if (loaddb || now < (data->atime + VT_DICT_PCRE_TIME_DIFF)) {
+  if (loaddb || now > (data->atime + VT_DICT_PCRE_TIME_DIFF)) {
+    data->atime = time (NULL);
+    vt_debug ("%s:%d: now: %lu, atime+diff: %lu", __func__, __LINE__,
+      now, data->atime+VT_DICT_PCRE_TIME_DIFF);
     fmt = "%s: stat %s: %s";
     if (stat (data->path, &st_buf) < 0) {
       switch (errno) {
@@ -674,6 +680,7 @@ again:
   }
 
   if (loaddb) {
+    vt_error ("%s:%d: trying to reload database", __func__, __LINE__);
     if (! wrlock) {
       if ((ret = pthread_rwlock_unlock (&data->lock)) != 0)
         vt_panic ("%s: pthread_rwlock_unlock: %s", __func__, strerror (ret));
@@ -868,7 +875,7 @@ vt_dict_multi_pcre_check (vt_dict_t *dict,
   assert (res);
   data = (vt_dict_multi_pcre_t *)dict->data;
   assert (data);
-vt_debug ("%s:%d: pos: %d", __func__, __LINE__, pos);
+
   if ((ret = pthread_rwlock_rdlock (&data->lock)) != 0)
     vt_panic ("%s: pthread_rwlock_rdlock: %s", __func__, strerror (ret));
 
@@ -880,7 +887,7 @@ vt_debug ("%s:%d: pos: %d", __func__, __LINE__, pos);
       weight = 0.0;
     goto update;
   }
-vt_debug ("%s:%d: member: %s", __func__, __LINE__, member);
+
   if ((ret = vt_dict_multi_pcre_open (data, &tmperr)) != 0) {
     vt_set_error (err, tmperr);
     goto unlock;
@@ -898,7 +905,7 @@ vt_debug ("%s:%d: member: %s", __func__, __LINE__, member);
   }
 
 update:
-vt_error ("%s:%d: pos: %d, weight: %f", __func__, __LINE__, pos, weight);
+  vt_error ("%s:%d: pos: %d, weight: %f", __func__, __LINE__, pos, weight);
   vt_result_update (res, pos, weight);
 unlock:
   if ((ret = pthread_rwlock_unlock (&data->lock)) != 0)

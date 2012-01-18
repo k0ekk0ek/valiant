@@ -60,13 +60,8 @@ vt_worker_init (void)
 {
   int ret;
   vt_worker_store_t *store;
-
+//vt_error ("%s:%d: init", __func__, __LINE__);
   pthread_key_create (&vt_worker_key, vt_worker_deinit);
-
-  if (! (store = calloc (1, sizeof (vt_worker_store_t))))
-    vt_error ("%s: calloc: %s", __func__, strerror (errno));
-  if (store && (ret = pthread_setspecific (vt_worker_key, store)) != 0)
-    vt_error ("%s: pthread_setspecific: %s", __func__, strerror (ret));
 }
 
 void
@@ -97,18 +92,24 @@ vt_worker (void *data, void *user_data)
   vt_request_t *req;
   vt_result_t *res;
   vt_stage_t *stage;
+  vt_stats_t *stats;
   vt_worker_store_t *store;
 
   assert (data);
   assert (user_data);
 
   conn = *((int *)data);
-  ctx = (vt_context_t *)user_data;
+  ctx = ((vt_worker_arg_t *)user_data)->context;
+  stats = ((vt_worker_arg_t *)user_data)->stats;
 
   if ((ret = pthread_once (&vt_worker_init_done, vt_worker_init)) != 0)
     vt_fatal ("%s: pthread_once: %s", __func__, strerror (ret));
-  if (! (store = pthread_getspecific (vt_worker_key)))
-    vt_fatal ("%s: pthread_getspecific: data unavailable", __func__);
+  if (! (store = pthread_getspecific (vt_worker_key))) {
+    if (! (store = calloc (1, sizeof (vt_worker_store_t))))
+      vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    if (store && (ret = pthread_setspecific (vt_worker_key, store)) != 0)
+      vt_error ("%s: pthread_setspecific: %s", __func__, strerror (ret));
+  }
 
   if (! store->request && ! (store->request = vt_request_create (&err)) ||
       ! store->result && ! (store->result = vt_result_create (ctx->ndicts, &err)))
@@ -257,6 +258,7 @@ vt_worker (void *data, void *user_data)
     vt_worker_resp (conn, ctx->delay_resp);
   else
     vt_worker_resp (conn, ctx->allow_resp);
+  vt_stats_update (stats, res);
   vt_result_reset (res);
   free (data);
 }

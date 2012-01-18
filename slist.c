@@ -23,7 +23,8 @@ vt_slist_free (vt_slist_t *list, VT_SLIST_FREE_FUNC free_data, unsigned int num)
   if (list) {
     every = num ? 0 : 1;
 
-    for (cur=list, next=cur->next; cur && (every || num--); cur=next, next=cur->next) {
+    for (cur=list; cur && (every || num--); cur=next) {
+      next = cur->next;
       if (free_data)
         free_data (cur->data);
       else if (cur->data)

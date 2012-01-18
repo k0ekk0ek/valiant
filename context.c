@@ -84,7 +84,7 @@ vt_context_dicts_init (vt_context_t *ctx,
     }
   }
 
-  *(dicts + ndicts) = NULL; /* null terminate */
+  //*(dicts + ndicts) = NULL; /* null terminate */
   ctx->dicts = dicts;
   ctx->ndicts = ndicts;
 
@@ -173,13 +173,13 @@ vt_stage_create (vt_context_t *ctx, cfg_t *cfg, vt_error_t *err)
 
   stage->nchecks = cfg_size (cfg, "check");
 
-  if (! (stage->checks = calloc (stage->nchecks, sizeof (int)))) {
+  if (! (stage->checks = calloc (stage->nchecks, sizeof (vt_check_t *)))) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     goto failure;
   }
 
-  for (i = 0; i < n; i++) {
+  for (i = 0; i < stage->nchecks; i++) {
     if ((sec = cfg_getnsec (cfg, "check", i))) {
       if (! (stage->checks[i] = vt_check_create (ctx, sec, err)))
         goto failure;
@@ -321,6 +321,8 @@ vt_context_create (vt_dict_type_t **types, cfg_t *cfg, vt_error_t *err)
       vt_context_stages_init (ctx, cfg, err) != 0)
     goto failure;
 
+  // right... create statistics stuff!
+
   return ctx;
 failure:
   (void)vt_context_destroy (ctx, NULL);
@@ -347,14 +349,6 @@ vt_context_destroy (vt_context_t *ctx, vt_error_t *err)
     if (ctx->error_resp)
       free (ctx->error_resp);
 
-    /* stages/checks */
-    //if (ctx->stages) {
-    //  for (cur = ctx->stages, next = NULL; cur; cur = next) {
-    //    (void)vt_stage_destroy ((vt_stage_t *)cur->data, 1 /* checks */, NULL);
-    //    next = cur->next;
-    //    free (cur);
-    //  }
-    //}
     if (ctx->stages) {
       for (i = 0; i < ctx->nstages; i++) {
         if (ctx->stages[i])
@@ -370,18 +364,6 @@ vt_context_destroy (vt_context_t *ctx, vt_error_t *err)
       }
       free (ctx->dicts);
     }
-
-    /* stats */
-    //if (ctx->stats) {
-    //  (void)vt_stats_destroy (ctx->stats, NULL);
-    //  free (ctx->stats);
-    //}
-
-    /* maps */
-    //if (ctx->maps) {
-    //  vt_map_list_destroy (ctx->maps, 1 /* maps */, NULL);
-    //  //free (ctx->maps);
-    //}
 
     memset (ctx, 0, sizeof (vt_context_t));
     return 0;

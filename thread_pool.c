@@ -80,36 +80,53 @@ FAILURE_MUTEX_INIT:
 int
 vt_thread_pool_destroy (vt_thread_pool_t *pool, vt_error_t *err)
 {
-  // IMPLEMENT... we do have to wait for all tasks to finish...
-  // it's probably best to accept an argument that specifies whether to wait or
-  // not!
+  int lock, loop, ret;
+  struct timespec wait;
 
-  // 1. start by aquiring mutex first
-  int loop, ret;
-
-  for (loop = 1; loop;) {
-    if ((ret = pthread_mutex_lock (&(pool->lock))) != 0)
-      vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (errno));
+  for (lock = 1, loop = 1; loop;) {
+    if (lock && (ret = pthread_mutex_lock (&(pool->lock))) != 0)
+      vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
 
     pool->dead = 1;
 
     if (pool->num_idle_threads > 0) {
-      if ((ret = pthread_cond_broadcast (&(pool->signal))) != 0)
-        vt_panic ("%s: pthread_cond_broadcast: %s", __func__, strerror (errno));
+      if ((ret = pthread_cond_broadcast (&pool->signal)) != 0)
+        vt_panic ("%s: pthread_cond_broadcast: %s", __func__, strerror (ret));
+      if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+        vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+      lock = 1;
+
+    } else if (pool->num_threads > 0 || pool->num_tasks > 0) {
+      /* new tasks are not accepted, but we need to make sure that existing
+         tasks finish correctly to avoid memory problems and the like */
+      if ((ret = clock_gettime (CLOCK_REALTIME, &wait)) == 0) {
+        wait.tv_sec += 2; /* magic number, BAD! */
+        wait.tv_nsec += 0;
+      }
+
+      if ((ret = pthread_cond_timedwait (&pool->signal, &pool->lock, &wait)) != 0) {
+        if (ret != ETIMEDOUT)
+          vt_panic ("%s: pthread_cond_timed_wait: %s", __func__, strerror (ret));
+        /* do nothing */
+      }
+
+      lock = 0;
+
     } else {
-      // well... what if still threads running? those will exit on their own...
-      // one nasty thing... we need to wait until they have all exited...
-      // so use timed wait in that case
-      // IMPLEMENT
+      vt_debug ("%s:%d: no more worker threads, no more tasks",
+        __func__, __LINE__);
+      if ((ret = pthread_mutex_unlock (&(pool->lock))) != 0)
+        vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
       loop = 0;
     }
-
-    if ((ret = pthread_mutex_unlock (&(pool->lock))) != 0)
-      vt_panic ("%s: pthread_mutex_unlock: %s");
   }
 
-  // free thread pool here
-  // IMPLEMENT
+  if ((ret = pthread_cond_destroy (&pool->signal)) != 0)
+    vt_panic ("%s: pthread_cond_destroy: %s", __func__, strerror (ret));
+  if ((ret = pthread_mutex_destroy (&pool->lock)) != 0)
+    vt_panic ("%s: pthread_mutex_destroy: %s", __func__, strerror (ret));
+
+  free (pool);
 
   return 0;
 }
@@ -171,11 +188,16 @@ thread_pool_worker (void *thread_pool)
       }
 
       lock = 0;
-      if (ret == ETIMEDOUT)
-        break; // FIXME: shouldn't total number of threads be updated here
-               //        somewhere?
-      if (ret)
-        vt_panic ("%s: %s: %s", __func__, func, strerror (ret));
+      if (ret) {
+        if (ret != ETIMEDOUT)
+          vt_panic ("%s: %s: %s", __func__, func, strerror (ret));
+        /* just a timeout, terminate self */
+        if (pool->num_threads > 0)
+          pool->num_threads--;
+        if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
+          vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));
+        break;
+      }
     }
   }
 
@@ -193,16 +215,21 @@ vt_thread_pool_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
 
   if ((ret = pthread_mutex_lock (&pool->lock)) != 0)
     vt_panic ("%s: pthread_mutex_lock: %s", __func__, strerror (ret));
+  if (pool->dead) {
+    vt_set_error (err, VT_ERR_QFULL);
+    vt_error ("%s: thread pool dead", __func__);
+    goto unlock;
+  }
   if (THREADS_DEPLETED (pool) && QUEUE_FULL (pool)) {
     vt_set_error (err, VT_ERR_QFULL);
     vt_error ("%s: queue full", __func__);
-    goto UNLOCK;
+    goto unlock;
   }
 
   if (! (task = vt_slist_alloc ())) {
     vt_set_error (err, VT_ERR_NOMEM);
     vt_error ("%s: vt_slist_alloc: %s", __func__, strerror (errno));
-    goto UNLOCK;
+    goto unlock;
   }
 
   task->data = arg;
@@ -227,7 +254,7 @@ vt_thread_pool_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
         vt_fatal (fmt, __func__, strerror (ret));
       vt_set_error (err, VT_ERR_AGAIN);
       vt_error (fmt, __func__, strerror (ret));
-      goto UNLOCK;
+      goto unlock;
     }
 
     pool->num_threads++;
@@ -236,7 +263,7 @@ vt_thread_pool_push (vt_thread_pool_t *pool, void *arg, vt_error_t *err)
     signal = 1;
   }
 
-UNLOCK:
+unlock:
 vt_error ("%s:%d: unlock, res: %d", __func__, __LINE__, res);
   if ((ret = pthread_mutex_unlock (&pool->lock)) != 0)
     vt_panic ("%s: pthread_mutex_unlock: %s", __func__, strerror (ret));

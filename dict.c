@@ -161,13 +161,14 @@ vt_async_dict_check (vt_dict_t *async_dict,
   data->request = req;
   data->result = res;
   data->pos = pos;
+
+  vt_result_lock (res);
 vt_debug ("%s:%d: ", __func__, __LINE__);
   if (vt_thread_pool_push (pool, (void *)data, err) != 0) {
     free (data);
     return -1;
   }
 vt_debug ("%s:%d: ", __func__, __LINE__);
-  vt_result_lock (res);
   return 0;
 }
 

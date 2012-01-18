@@ -20,6 +20,7 @@
 #include "dict_rhsbl.h"
 #include "dict_spf.h"
 #include "dict_str.h"
+#include "stats.h"
 #include "thread_pool.h"
 #include "watchdog.h"
 #include "worker.h"
@@ -91,11 +92,13 @@ vt_cleanup_worker (void *arg)
 
   context = ((vt_cleanup_arg_t *)arg)->context;
   workers = ((vt_cleanup_arg_t *)arg)->workers;
+vt_error ("%s:%d: ", __func__, __LINE__);
   free (arg);
-
+vt_error ("%s:%d: ", __func__, __LINE__);
   (void)vt_thread_pool_destroy (workers, NULL);
+vt_error ("%s:%d: ", __func__, __LINE__);
   (void)vt_context_destroy (context, NULL);
-
+vt_error ("%s:%d: ", __func__, __LINE__);
   return NULL;
 }
 
@@ -141,6 +144,7 @@ main (int argc, char *argv[])
   vt_dict_type_t *types[7];
   vt_error_t err;
   vt_thread_pool_t *pool;
+  vt_stats_t *stats, *new_stats;
 
   if ((prog = strrchr (argv[0], '/')))
     prog++;
@@ -199,13 +203,22 @@ main (int argc, char *argv[])
   if (! (ctx = vt_context_create (types, cfg, &err)))
     vt_fatal ("cannot create context: %d", err);
 
+  cfg_free (cfg);
 
 
   // drop priveleges
   // fprintf (stderr, "%s (%d)\n", __func__, __LINE__);
   // create workers
 
-  if (! (pool = vt_thread_pool_create ((void *)ctx, ctx->max_threads, &vt_worker, &err)))
+  // create stats printer
+  stats = vt_stats_create (ctx->dicts, ctx->ndicts, &err);
+  vt_stats_thread (stats);
+
+  vt_worker_arg_t warg;
+  warg.context = ctx;
+  warg.stats = stats;
+
+  if (! (pool = vt_thread_pool_create ((void *)&warg, ctx->max_threads, &vt_worker, &err)))
     return EXIT_FAILURE;
   vt_thread_pool_set_max_idle_threads (pool, ctx->max_idle_threads);
   vt_thread_pool_set_max_queued (pool, ctx->max_tasks);
@@ -253,33 +266,45 @@ main (int argc, char *argv[])
         new_cfg = NULL;
         new_ctx = NULL;
         new_pool = NULL;
-
+vt_debug ("%s:%d", __func__, __LINE__);
         if (! (new_cfg = vt_cfg_parse (config_file))) {
           vt_error ("%s: could not parse %s: reload aborted",
             __func__, config_file);
           goto failure_reload;
         }
+vt_debug ("%s:%d", __func__, __LINE__);
         if (! (new_ctx = vt_context_create (types, new_cfg, &err))) {
           vt_error ("%s: could not create context: reload aborted", __func__);
           goto failure_reload;
         }
-
+vt_debug ("%s:%d", __func__, __LINE__);
         cfg_free (new_cfg);
         new_cfg = NULL;
 
-        new_pool = vt_thread_pool_create ((void *)new_ctx,
+        new_stats = vt_stats_create (new_ctx->dicts, new_ctx->ndicts, &err);
+        vt_stats_thread (stats);
+
+        warg.context = new_ctx;
+        warg.stats = new_stats;
+
+        new_pool = vt_thread_pool_create ((void *)&warg,
           new_ctx->max_threads, &vt_worker, &err);
+vt_debug ("%s:%d", __func__, __LINE__);
         if (! new_pool) {
           vt_error ("%s: could not create workers: reload aborted", __func__);
           goto failure_reload;
         }
         vt_thread_pool_set_max_idle_threads (new_pool, new_ctx->max_idle_threads);
         vt_thread_pool_set_max_queued (new_pool, new_ctx->max_tasks);
+vt_debug ("%s:%d", __func__, __LINE__);
+        vt_stats_destroy (stats, NULL);
         vt_cleanup (pool, ctx, 1);
         ctx = new_ctx;
         pool = new_pool;
+        stats = new_stats;
         break;
 failure_reload:
+vt_error ("%s:%d", __func__, __LINE__);
         if (new_cfg)
           cfg_free (new_cfg);
         if (new_ctx)

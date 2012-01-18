@@ -54,7 +54,5 @@ struct _vt_context {
 
 vt_context_t *vt_context_create (vt_dict_type_t **, cfg_t *, vt_error_t *);
 int vt_context_destroy (vt_context_t *, vt_error_t *);
-//int vt_context_add_dict (vt_context_t *, vt_dict_t *, vt_error_t *);
-//int vt_context_get_dict_pos (vt_context_t *, const char *);
 
 #endif

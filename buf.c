@@ -30,7 +30,7 @@ vt_buf_ncpy (vt_buf_t *buf, const char *str, size_t len)
   assert (str);
 
   if (len) {
-    if (! buf->buf || len > buf->len) {
+    if (! buf->buf || len >= buf->len) {
       // FIXME: handle integer overflow
       nlen = len + 1;
       if (! (nbuf = realloc (buf->buf, nlen * sizeof (char))))
