@@ -5,7 +5,7 @@
 #include <string.h>
 
 /* valiant includes */
-#include "buf.h"
+#include "vt_buf.h"
 
 int
 vt_buf_init (vt_buf_t *buf, size_t len)
@@ -42,6 +42,32 @@ vt_buf_ncpy (vt_buf_t *buf, const char *str, size_t len)
     memmove (buf->buf, str, len);
     *(buf->buf+len) = '\0'; /* always null terminate */
     buf->cnt = len;
+  }
+
+  return buf;
+}
+
+vt_buf_t *
+vt_buf_ncat (vt_buf_t *buf, const char *str, size_t len)
+{
+  char *nbuf;
+  size_t nlen;
+
+  assert (buf);
+  assert (str);
+
+  if (len) {
+    if (! buf->buf || len >= (buf->len - buf->cnt)) {
+      nlen = buf->cnt + len + 1;
+      if (! (nbuf = realloc (buf->buf, nlen * sizeof (char))))
+        return NULL;
+      buf->buf = nbuf;
+      buf->len = nlen;
+    }
+
+    memmove (buf->buf + buf->cnt, str, len);
+    buf->cnt += len;
+    *(buf->buf + buf->cnt) = '\0'; /* always null terminate */
   }
 
   return buf;
