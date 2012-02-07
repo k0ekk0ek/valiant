@@ -24,7 +24,7 @@ enum _vt_config_type {
   VT_CONFIG_TYPE_BOOL, /* vt_config_t with list of boolean value(s) */
   VT_CONFIG_TYPE_INT, /* vt_config_t with list of integer value(s) */
   VT_CONFIG_TYPE_FLOAT, /* vt_config_t with list of floating point value(s) */
-  VT_CONFIG_TYPE_STRING /* vt_config_t with list of string value(s) */
+  VT_CONFIG_TYPE_STR /* vt_config_t with list of string value(s) */
 };
 
 #define VT_CONFIG_FLAG_NONE (0)
@@ -157,11 +157,7 @@ vt_config_t *vt_config_parse_file (vt_config_def_t *, const char *,
   { NULL, VT_CONFIG_TYPE_NONE, 0, \
     {.opt = {NULL, NULL, NULL, {VT_VALUE_TYPE_INT, {.lng = 0 }}}}}
 
-const char *vt_config_getname (vt_config_t *);
-
-int vt_config_isfile (vt_config_t *);
-int vt_config_issec (vt_config_t *);
-int vt_config_isopt (vt_config_t *);
+char *vt_config_getname (vt_config_t *);
 
 vt_value_t *vt_config_getnval (vt_config_t *, unsigned int, int *);
 unsigned int vt_config_getnvals (vt_config_t *, int *);
@@ -180,7 +176,7 @@ char *vt_config_getnstr (vt_config_t *, unsigned int, int *);
 
 /* section interface */
 #define vt_config_sec_getname(cfg) (vt_config_getname ((cfg)))
-const char *vt_config_sec_gettitle (vt_config_t *, int *);
+char *vt_config_sec_gettitle (vt_config_t *);
 vt_config_t *vt_config_sec_getnopt (vt_config_t *, const char *, unsigned int,
   int *);
 unsigned int vt_config_sec_getnopts (vt_config_t *, int *);

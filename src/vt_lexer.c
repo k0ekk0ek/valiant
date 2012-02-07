@@ -6,32 +6,12 @@
 #include <string.h>
 
 /* valiant includes */
-#include "error.h"
-#include "lexer.h"
+#include "vt_error.h"
+#include "vt_lexer.h"
 
-void
-vt_lexer_def_clr (vt_lexer_def_t *def)
-{
-  assert (def);
-
-  def->space = NULL;
-  def->str_first = NULL;
-  def->str = NULL;
-  def->dquot = NULL;
-  def->squot = NULL;
-
-  def->skip_comment_multi = 0;
-  def->skip_comment_single = 0;
-  def->scan_binary = 0;
-  def->scan_octal = 0;
-  def->scan_hex = 0;
-  def->scan_hex_dollar = 0;
-  def->scan_str_dquot = 0;
-  def->scan_str_squot = 0;
-  def->numbers_as_int = 0;
-  def->int_as_float = 0;
-  def->char_as_token = 0;
-}
+/* prototypes */
+int vt_lexer_def_in_class (int, const char *, const char *, const char *);
+int vt_lexer_def_is_true (int, int, int);
 
 void
 vt_lexer_def_reset (vt_lexer_def_t *def)
@@ -357,7 +337,7 @@ vt_lexer_peek_chr (vt_lexer_t *lxr, ssize_t pos)
   int chr;
 
   assert (lxr);
-// we're always one character ahead...
+
   pos--;
   if (lxr->eof || (pos < 0 && ((ssize_t)lxr->pos + pos) < 0) || ((ssize_t)lxr->pos + pos) >= lxr->len)
     chr = '\0';
@@ -405,13 +385,9 @@ vt_lexer_unget_chr (vt_lexer_t *lxr)
 }
 
 int
-vt_lexer_is_chr (int chr,
-                 const char *chrs, /* defaults */
-                 const char *def_chrs, /* defaults for lexer */
-                 const char *scp_def_chrs) /* defaults for lexer in current scope */
+vt_lexer_def_in_class (int chr, const char *chrs, const char *def_chrs,
+  const char *scp_def_chrs)
 {
-  char *str;
-
   if (chr) {
     if (scp_def_chrs)
       return strchr (scp_def_chrs, chr) ? chr : 0;
@@ -423,8 +399,25 @@ vt_lexer_is_chr (int chr,
   return 0;
 }
 
+#define __vt_lexer_def_in_class(chr, chrs, def, scp_def, mbr) \
+  (vt_lexer_def_in_class ((chr), (chrs), ((def) ? (def)->mbr : NULL), \
+    ((scp_def) ? (scp_def)->mbr: NULL)))
+
+#define vt_is_space(chr, def, scp_def) \
+  ((chr) == '\n' || __vt_lexer_def_in_class ((chr), VT_CHRS_SPACE, (def), \
+    (scp_def), space))
+#define vt_is_str_first(chr, def, scp_def) \
+  (__vt_lexer_def_in_class ((chr), VT_CHRS_STR_FIRST, (def), (scp_def), \
+    str_first))
+#define vt_is_str(chr, def, scp_def) \
+  (__vt_lexer_def_in_class ((chr), VT_CHRS_STR, (def), (scp_def), str))
+#define vt_is_dquot(chr, def, scp_def) \
+  (__vt_lexer_def_in_class ((chr), VT_CHRS_DQUOT, (def), (scp_def), dquot))
+#define vt_is_squot(chr, def, scp_def) \
+  (__vt_lexer_def_in_class ((chr), VT_CHRS_SQUOT, (def), (scp_def), squot))
+
 int
-vt_lexer_def_mbr_is_true (int glbl_bln, int def_bln, int scp_def_bln)
+vt_lexer_def_is_true (int bln, int def_bln, int scp_def_bln)
 {
   if (scp_def_bln != -1)
     return (scp_def_bln) ? 1 : 0;
@@ -433,47 +426,40 @@ vt_lexer_def_mbr_is_true (int glbl_bln, int def_bln, int scp_def_bln)
   return glbl_bln;
 }
 
-#define vt_is_space(chr, def, scp_def) \
-  ((chr) == '\n' || vt_lexer_is_chr ((chr), VT_CHRS_SPACE, ((def) ? (def)->space : NULL), ((scp_def) ? (scp_def)->space : NULL)))
-#define vt_is_str_first(chr, def, scp_def) \
-  (vt_lexer_is_chr ((chr), VT_CHRS_STR_FIRST, ((def) ? (def)->str_first : NULL), ((scp_def) ? (scp_def)->str_first : NULL)))
-#define vt_is_str(chr, def, scp_def) \
-  (vt_lexer_is_chr ((chr), VT_CHRS_STR, ((def) ? (def)->str : NULL), ((scp_def) ? (scp_def)->str : NULL)))
-#define vt_is_dquot(chr, def, scp_def) \
-  (vt_lexer_is_chr ((chr), VT_CHRS_DQUOT, ((def) ? (def)->dquot : NULL), ((scp_def) ? (scp_def)->dquot : NULL)))
-#define vt_is_squot(chr, def, scp_def) \
-  (vt_lexer_is_chr ((chr), VT_CHRS_SQUOT, ((def) ? (def)->squot : NULL), ((scp_def) ? (scp_def)->squot : NULL)))
-
-#define vt_lexer_def_is_true(glbl_bln, def, scp_def, mbr) \
-  (vt_lexer_def_mbr_is_true ((glbl_bln), ((def) ? ((def)->mbr ? 1 : 0) : -1), ((scp_def) ? ((scp_def)->mbr ? 1 : 0) : -1)))
+#define __vt_lexer_def_is_true(bln, def, scp_def, mbr) \
+  (vt_lexer_def_mbr_is_true ((bln), ((def) ? ((def)->mbr ? 1 : 0) : -1), \
+    ((scp_def) ? ((scp_def)->mbr ? 1 : 0) : -1)))
 
 #define vt_skip_comment_single(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SKIP_COMMENT_SINGLE, (def), (scp_def), skip_comment_single))
+  (__vt_lexer_def_is_true (VT_SKIP_COMMENT_SINGLE, (def), (scp_def), \
+    skip_comment_single))
 #define vt_skip_comment_multi(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SKIP_COMMENT_MULTI, (def), (scp_def), skip_comment_multi))
+  (__vt_lexer_def_is_true (VT_SKIP_COMMENT_MULTI, (def), (scp_def), \
+    skip_comment_multi))
 #define vt_scan_bool(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SCAN_BOOL, (def), (scp_def), scan_bool))
+  (__vt_lexer_def_is_true (VT_SCAN_BOOL, (def), (scp_def), scan_bool))
 #define vt_scan_binary(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SCAN_BINARY, (def), (scp_def), scan_binary))
+  (__vt_lexer_def_is_true (VT_SCAN_BINARY, (def), (scp_def), scan_binary))
 #define vt_scan_octal(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SCAN_OCTAL, (def), (scp_def), scan_octal))
+  (__vt_lexer_def_is_true (VT_SCAN_OCTAL, (def), (scp_def), scan_octal))
 #define vt_scan_float(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SCAN_FLOAT, (def), (scp_def), scan_float))
+  (__vt_lexer_def_is_true (VT_SCAN_FLOAT, (def), (scp_def), scan_float))
+#define vt_scan_int(def, scp_def) \
+  (__vt_lexer_def_is_true (VT_SCAN_INT, (def), (scp_def), scan_int))
 #define vt_scan_hex(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SCAN_HEX, (def), (scp_def), scan_hex))
+  (__vt_lexer_def_is_true (VT_SCAN_HEX, (def), (scp_def), scan_hex))
 #define vt_scan_hex_dollar(def, scp_def) \
-  (vt_lexer_def_is_true (VT_SCAN_HEX_DOLLAR, (def), (scp_def), scan_hex_dollar))
+  (__vt_lexer_def_is_true (VT_SCAN_HEX_DOLLAR, (def), (scp_def), \
+    scan_hex_dollar))
 #define vt_numbers_as_int(def, scp_def) \
-  (vt_lexer_def_is_true (VT_NUMBERS_AS_INT, (def), (scp_def), numbers_as_int))
+  (__vt_lexer_def_is_true (VT_NUMBERS_AS_INT, (def), (scp_def), numbers_as_int))
 #define vt_int_as_float(def, scp_def) \
-  (vt_lexer_def_is_true (VT_INT_AS_FLOAT, (def), (scp_def), int_as_float))
+  (__vt_lexer_def_is_true (VT_INT_AS_FLOAT, (def), (scp_def), int_as_float))
 #define vt_char_as_token(def, scp_def) \
-  (vt_lexer_def_is_true (VT_CHAR_AS_TOKEN, (def), (scp_def), char_as_token))
+  (__vt_lexer_def_is_true (VT_CHAR_AS_TOKEN, (def), (scp_def), char_as_token))
 
 vt_token_t
-vt_lexer_get_next_token (vt_lexer_t *lxr,
-                         vt_lexer_def_t *scp_def,
-                         vt_error_t *err)
+vt_lexer_get_next_token (vt_lexer_t *lxr, vt_lexer_def_t *scp_def, int *err)
 {
   bool bln;
   char *str, *ptr;

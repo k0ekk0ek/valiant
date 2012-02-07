@@ -10,7 +10,7 @@
 #include <stdbool.h>
 
 /* valiant includes */
-#include "error.h"
+#include "vt_error.h"
 
 #define VT_CHRS_AZ_LC "abcdefghijklmnopqrstuvwxyz"
 #define VT_CHRS_AZ_UC "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -50,15 +50,15 @@ enum _vt_token {
   VT_TOKEN_EQUAL_SIGN = '=',
   VT_TOKEN_COMMA = ',',
   VT_TOKEN_NONE = 256,
-  VT_TOKEN_ERROR, // 257
-  VT_TOKEN_BOOL, // 258
-  VT_TOKEN_CHAR, // 259
-  VT_TOKEN_BINARY, // 260
-  VT_TOKEN_OCTAL, // 260
-  VT_TOKEN_INT, // 261
-  VT_TOKEN_HEX, // 262
+  VT_TOKEN_ERROR,
+  VT_TOKEN_BOOL,
+  VT_TOKEN_CHAR,
+  VT_TOKEN_BINARY,
+  VT_TOKEN_OCTAL,
+  VT_TOKEN_INT,
+  VT_TOKEN_HEX,
   VT_TOKEN_FLOAT,
-  VT_TOKEN_STRING,
+  VT_TOKEN_STR,
   VT_TOKEN_COMMENT_SINGLE,
   VT_TOKEN_COMMENT_MULTI,
   VT_TOKEN_LAST
@@ -71,7 +71,7 @@ enum _vt_value_type {
   VT_VALUE_TYPE_CHAR,
   VT_VALUE_TYPE_INT,
   VT_VALUE_TYPE_FLOAT,
-  VT_VALUE_TYPE_STRING
+  VT_VALUE_TYPE_STR
 };
 
 typedef union _vt_value_mbr vt_value_mbr_t;

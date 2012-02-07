@@ -579,40 +579,14 @@ vt_config_getname (vt_config_t *cfg)
   return cfg->name;
 }
 
-int
-vt_config_isfile (vt_config_t *cfg)
-{
-  assert (cfg);
-
-  return (cfg->type == VT_CONFIG_TYPE_FILE) ? 1 : 0;
-}
-
-int
-vt_config_issec (vt_config_t *cfg)
-{
-  assert (cfg);
-
-  return (cfg->type == VT_CONFIG_TYPE_SEC) ? 1 : 0;
-}
-
-int
-vt_config_isopt (vt_config_t *opt)
-{
-  assert (opt);
-
-  if (opt->type == VT_CONFIG_TYPE_BOOL   ||
-      opt->type == VT_CONFIG_TYPE_INT    ||
-      opt->type == VT_CONFIG_TYPE_FLOAT  ||
-      opt->type == VT_CONFIG_TYPE_STRING)
-    return 1;
-  return 0;
-}
-
 vt_value_t *
 vt_config_getnval (vt_config_t *opt, unsigned int idx, int *err)
 {
   assert (opt);
-  assert (vt_config_isopt (opt));
+  assert (opt->type == VT_CONFIG_TYPE_BOOL  ||
+          opt->type == VT_CONFIG_TYPE_INT   ||
+          opt->type == VT_CONFIG_TYPE_FLOAT ||
+          opt->type == VT_CONFIG_TYPE_STR);
 
   if (idx <= opt->data.opt.nvals)
     return opt->data.opt.vals[idx];
@@ -697,6 +671,17 @@ vt_config_getnstr (vt_config_t *opt, unsigned int idx, int *err)
   return val->data.str;
 }
 
+char *
+vt_config_sec_gettitle (vt_config_t *sec)
+{
+  assert (sec);
+  assert (sec->type == VT_CONFIG_TYPE_SEC);
+
+  if (sec->flags & VT_CONFIG_FLAG_TITLE)
+    return sec->data.sec.title;
+  return NULL;
+}
+
 vt_config_t *
 vt_config_sec_getnopt (vt_config_t *sec, const char *name, unsigned int idx,
   int *err)
@@ -750,6 +735,15 @@ vt_config_sec_getnopt_priv (vt_config_t *sec, vt_value_type_t type,
   return opt;
 }
 
+unsigned int
+vt_config_sec_getnopts (vt_config_t *sec)
+{
+  assert (sec);
+  assert (sec->type == VT_CONFIG_TYPE_SEC || sec->type == VT_CONFIG_TYPE_FILE);
+
+  return sec->data.sec.nopts;
+}
+
 bool
 vt_config_sec_getnbool (vt_config_t *sec, const char *name, unsigned int idx,
   int *err)
@@ -779,3 +773,14 @@ vt_config_sec_getnfloat (vt_config_t *sec, const char *name, unsigned int idx,
   opt = vt_config_sec_getnopt (sec, VT_CONFIG_TYPE_FLOAT, name, idx, err);
   return opt ? vt_config_getnfloat (opt, idx, err) : 0.0;
 }
+
+char *
+vt_config_sec_getnstr (vt_config_t *sec, const char *name, unsigned int idx,
+  int *err)
+{
+  vt_config_t *opt;
+
+  opt = vt_config_sec_getnopt (sec, VT_CONFIG_TYPE_STR, name, idx, err);
+  return opt ? vt_config_getnstr (opt, idx, err) : NULL;
+}
+
