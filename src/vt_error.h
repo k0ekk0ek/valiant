@@ -5,6 +5,8 @@
 #include <stdarg.h>
 #include <errno.h>
 
+#define VT_ERROR_BUFLEN (1024)
+
 /* #define VT_SUCCESS (0) // obsolete */
 /* #define VT_ERR_NOMEM (1) // obsolete, superseded by ENOMEM */
 /* #define VT_ERR_NOBUFS (2) // obsolete, superseded by ENOBUFS */
@@ -19,6 +21,9 @@
 /* #define VT_ERR_RETRY (11) // obsolete */
 /* #define VT_ERR_AGAIN (12) // obsolete, superseded by EAGAIN */
 /* #define VT_ERR_BADREQUEST (13) // obsolete */
+
+#define VT_ERR_BAD_REQUEST (-1) /* Not a valid request */
+#define VT_ERR_BAD_MEMBER (-2) /* Not a valid request member */
 
 void vt_set_errno (int *, int);
 char *vt_strerror (int);

@@ -68,8 +68,8 @@ struct _vt_config {
   char name[VT_CONFIG_NAME_MAX + 1];
   vt_config_type_t type;
   unsigned int flags;
-  int colno;
-  int lineno;
+  int line;
+  int column;
   vt_config_mbr_t data;
 };
 
@@ -90,7 +90,6 @@ struct  _vt_config_def_sec {
 struct _vt_config_def_opt {
   char *dquot; /* chars that count as double quote, defaults to "\"" */
   char *squot; /* chars that count as single quote, defaults to "\'" */
-  char *sep; /* char that count as value seperate */
   vt_value_t val; /* default value */
 };
 
@@ -110,83 +109,67 @@ struct _vt_config_def {
 };
 
 
-/* parse interface */
-vt_config_t *vt_config_parse_buf (vt_config_def_t *, const char *, size_t,
+vt_config_t *vt_config_parse_str (vt_config_def_t *, const char *, size_t,
   int *);
 vt_config_t *vt_config_parse_file (vt_config_def_t *, const char *,
   int *);
 
-/* definition interface */
-
-/*
-*_INT*, integer option
-*_FLOAT*, floating point option
-*_BOOL*, boolean option
-*_STR*, string option
-*_LIST, option can have multiple values, seperated by ','
-*_SEP, option can have multiple values, seperated by chars in sep argument
-*_STR_DQUOT, string option, chars in dquot member count as double quote char
-*_STR_SQUOT, string option, chars in squot member count as single quote char
-*_SEC_TITLE, section, chars in chrs member are allowed in title
-*/
-
-#define VT_CONFIG_INT(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_INT, (flags), {.opt = {NULL, NULL, NULL, { VT_VALUE_TYPE_INT, {.lng = (def) }}}}}
-#define VT_CONFIG_INT_LIST(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_INT, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {NULL, NULL, ",", {.lng = (def) }}}}
-//#define VT_CONFIG_INT_SEP(name, sep, def, flags) \
-//  { (name), VT_CONFIG_TYPE_INT, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {NULL, NULL, (sep), {.lng = (def) }}}}
-#define VT_CONFIG_FLOAT(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_FLOAT, (flags), {.opt = {NULL, NULL, NULL, {.dbl = (def) }}}}
-#define VT_CONFIG_FLOAT_LIST(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_FLOAT, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {NULL, NULL, ",", {.dbl = (def) }}}}
-//#define VT_CONFIG_FLOAT_SEP(name, sep, def, flags) \
-//  { (name), VT_CONFIG_TYPE_FLOAT, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {NULL, NULL, (sep), {.dbl = (def) }}}}
 #define VT_CONFIG_BOOL(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_BOOL, (flags), {.opt = {NULL, NULL, NULL, {.bln = (def) ? true : false }}}}
+  { (name), VT_CONFIG_TYPE_BOOL, (flags), \
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_BOOL, {.bln = (def) ? true : false }}}}}
 #define VT_CONFIG_BOOL_LIST(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_BOOL, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {NULL, NULL, ",", {.bln = (def) ? true : false }}}}
-//#define VT_CONFIG_BOOL_SEP(name, sep, def, flags) \
-//  { (name), Vt_CONFIG_TYPE_BOOL, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {NULL, NULL, (sep), {.bln = (def) ? true : false }}}}
-#define VT_CONFIG_STR(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_STR, (flags), {.opt = {"\"", "\'", NULL, {.str = (def) }}}}
-#define VT_CONFIG_STR_LIST(name, def, flags) \
-  { (name), VT_CONFIG_TYPE_STR, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {"\"", "\'", ",", {.str = (dev) }}}}
-//#define VT_CONFIG_STR_SEP(name, sep, def, flags) \
-//  { (name), VT_CONFIG_TYPE_STR, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {"\"", "\'", (sep), {.str = (dev) }}}}
-//#define VT_CONFIG_STR_QUOT_SEP(name, dquot, squot, sep, def, flags) \
-//  { (name), VT_CONFIG_TYPE_STR, ((flags) | VT_CONFIG_FLAG_LIST), {.opt = {(dquot), (squot), (sep), {.str = (dev) }}}}
-#define VT_CONFIG_STR_QUOT(name, dquot, squot, def, flags) \
-  { (name), VT_CONFIG_TYPE_STR, (flags), {.opt = {(dquot), (squot), NULL, {.str = (dev) }}}}
+  { (name), VT_CONFIG_TYPE_BOOL, ((flags) | VT_CONFIG_FLAG_LIST), \
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_BOOL, {.bln = (def) ? true : false }}}}}
+#define VT_CONFIG_INT(name, def, flags) \
+  { (name), VT_CONFIG_TYPE_INT, (flags), \
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_INT, {.lng = (def) }}}}}
+#define VT_CONFIG_INT_LIST(name, def, flags) \
+  { (name), VT_CONFIG_TYPE_INT, ((flags) | VT_CONFIG_FLAG_LIST), \
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_INT, {.lng = (def) }}}}}
+#define VT_CONFIG_FLOAT(name, def, flags) \
+  { (name), VT_CONFIG_TYPE_FLOAT, (flags), \
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_FLOAT, {.dbl = (def) }}}}}
+#define VT_CONFIG_FLOAT_LIST(name, def, flags) \
+  { (name), VT_CONFIG_TYPE_FLOAT, ((flags) | VT_CONFIG_FLAG_LIST), \
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_FLOAT, {.dbl = (def) }}}}}
+#define VT_CONFIG_STRING(name, def, flags) \
+  { (name), VT_CONFIG_TYPE_STR, (flags), \
+    {.opt = {"\"", "\'", {VT_VALUE_TYPE_STR, {.str = (def) }}}}}
+#define VT_CONFIG_STRING_LIST(name, def, flags) \
+  { (name), VT_CONFIG_TYPE_STR, ((flags) | VT_CONFIG_FLAG_LIST), \
+    {.opt = {"\"", "\'", {VT_VALUE_TYPE_STR {.str = (dev) }}}}}
+#define VT_CONFIG_STRING_QUOT(name, dquot, squot, def, flags) \
+  { (name), VT_CONFIG_TYPE_STR, (flags), \
+    {.opt = {(dquot), (squot), {VT_VALUE_TYPE_STR, {.str = (dev) }}}}}
 #define VT_CONFIG_STR_DQUOT(name, dquot, def, flags) \
-  { (name), VT_CONFIG_TYPE_STR, (flags), {.opt = {(dquot), "\'", NULL, {.str = (dev) }}}}
+  { (name), VT_CONFIG_TYPE_STR, (flags), \
+    {.opt = {(dquot), "\'", {VT_VALUE_TYPE_STR, {.str = (dev) }}}}}
 #define VT_CONFIG_STR_SQUOT(name, squot, def, flags) \
-  { (name), VT_CONFIG_TYPE_STR, (flags), {.opt = {"\"", (squot), NULL, {.str = (dev) }}}}
-
-#define VT_CONFIG_SEC(name, arr, flags) \
-  { (name), VT_CONFIG_TYPE_SEC, {.sec = (opts) }}
-//#define VT_CONFIG_SEC_TITLE(name, chrs, arr, flags) \
-//  { (name), VT_CONFIG_TYPE_SEC, {
+  { (name), VT_CONFIG_TYPE_STR, (flags), \
+    {.opt = {"\"", (squot), {VT_VALUE_TYPE_STR, {.str = (dev) }}}}}
+#define VT_CONFIG_SEC(name, opts, flags) \
+  { (name), VT_CONFIG_TYPE_SEC, (flags), \
+    {.sec = {VT_CHRS_STR, (opts) }}}
+#define VT_CONFIG_SEC_TITLE(name, chrs, opts, flags) \
+  { (name), VT_CONFIG_TYPE_SEC, ((flags) | VT_CONFIG_FLAG_TITLE), \
+    {.sec = {(chrs), (opts) }}}
 #define VT_CONFIG_END() \
-  { NULL, VT_CONFIG_TYPE_NONE, 0, {.opt = {NULL, NULL, NULL, { VT_VALUE_TYPE_CHAR, {.chr = '\0' }}}}}
+  { NULL, VT_CONFIG_TYPE_NONE, 0, \
+    {.opt = {NULL, NULL, NULL, {VT_VALUE_TYPE_INT, {.lng = 0 }}}}}
 
-
-
-/* option interface */
 const char *vt_config_getname (vt_config_t *);
 
 int vt_config_isfile (vt_config_t *);
 int vt_config_issec (vt_config_t *);
 int vt_config_isopt (vt_config_t *);
 
-//vt_config_type_t vt_config_gettype (vt_config_t *);
-vt_value_t *vt_config_getnval (vt_config_t *, unsigned int, vt_error_t *);
+vt_value_t *vt_config_getnval (vt_config_t *, unsigned int, int *);
 unsigned int vt_config_getnvals (vt_config_t *, int *);
 
-long vt_config_getnint (vt_config_t *, unsigned int, vt_error_t *);
+long vt_config_getnint (vt_config_t *, unsigned int, int *);
 #define vt_config_getint(cfg) (vt_config_getnint ((cfg), 0))
 
-double vt_config_getnfloat (vt_config_t *, unsigned int);
+double vt_config_getnfloat (vt_config_t *, unsigned int, int *);
 #define vt_config_getfloat(cfg) (vt_config_getnfloat ((cfg), 0))
 
 bool vt_config_getnbool (vt_config_t *, unsigned int, int *);
@@ -199,7 +182,7 @@ char *vt_config_getnstr (vt_config_t *, unsigned int, int *);
 #define vt_config_sec_getname(cfg) (vt_config_getname ((cfg)))
 const char *vt_config_sec_gettitle (vt_config_t *, int *);
 vt_config_t *vt_config_sec_getnopt (vt_config_t *, const char *, unsigned int,
-  vt_error_t *);
+  int *);
 unsigned int vt_config_sec_getnopts (vt_config_t *, int *);
 
 /* specify NULL instead of name in vt_config_get(n)sec(s) functions to operate
@@ -212,7 +195,7 @@ unsigned int vt_config_sec_getnsecs (vt_config_t *, const char *,
   int *);
 
 long vt_config_sec_getnint (vt_config_t *, const char *, unsigned int,
-  vt_error_t *);
+  int *);
 #define vt_config_sec_getint(cfg, opt, err) \
   (vt_config_sec_getnint ((cfg), (opt), 0, (err)))
 
@@ -230,6 +213,5 @@ char *vt_config_sec_getnstr (vt_config_t *, const char *, unsigned int,
   int *);
 #define vt_config_sec_getstr(cfg, opt, err) \
   (vt_config_sec_getnstr ((cfg), (opt), 0, (err))
-
 
 #endif

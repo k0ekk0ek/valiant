@@ -2,38 +2,24 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* valiant includes */
 #include "buf.h"
-#include "config.h"
-#include "lexer.h"
-
-/* prototypes */
-int vt_config_parse_opt (vt_config_t *, vt_config_def_t *, vt_lexer_t *,
-  vt_errno_t *);
-int vt_config_parse_sec (vt_config_t *, vt_config_def_t *, vt_lexer_t *,
-  vt_errno_t *);
-int vt_config_parse (vt_config_t *, vt_config_def_t *, vt_lexer_t *,
-  vt_errno_t *);
-
-//
-
-vt_value_t *vt_config_getnval_priv (vt_config_t *, vt_value_type_t,
-  unsigned int, vt_errno_t);
-
-
+#include "vt_config_priv.h"
+#include "vt_lexer.h"
 
 vt_config_t *
-vt_config_create (vt_config_t *cfg, vt_error_t *err)
+vt_config_create (vt_config_t *cfg, int *err)
 {
   unsigned int nopts;
   vt_config_t *opt, **opts;
 
   if (! (opt = calloc (1, sizeof (vt_config_t)))) {
-    vt_set_error (err, VT_ERR_NOMEM);
-    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    vt_set_errno (err, errno);
+    vt_error ("%s: calloc: %s", __func__, vt_strerror (errno));
     goto failure;
   }
 
@@ -49,8 +35,8 @@ vt_config_create (vt_config_t *cfg, vt_error_t *err)
     }
 
     if (! opts) {
-      vt_set_error (err, VT_ERR_NOMEM);
-      vt_error ("%s: realloc: %s", __func__, strerror (errno));
+      vt_set_errno (err, errno);
+      vt_error ("%s: realloc: %s", __func__, vt_strerror (errno));
       goto failure;
     }
 
@@ -282,15 +268,15 @@ int
 vt_config_parse_opt (vt_config_t *opt,
                      vt_config_def_t *def,
                      vt_lexer_t *lxr,
-                     vt_error_t *err)
+                     int *err)
 {
   char *spec;
   int loop, state;
   vt_lexer_def_t lxr_def;
   vt_token_t token;
   vt_value_t *val;
+
   vt_config_prep_lexer_def (&lxr_def, def);
-vt_error ("option: %s", opt->name);
 
   for (loop = 1, state = 0; loop;) {
     token = vt_lexer_get_next_token (lxr, &lxr_def, err);
@@ -475,7 +461,7 @@ vt_config_t *
 vt_config_parse_str (vt_config_def_t *defs,
                      const char *str,
                      size_t len,
-                     vt_error_t *err)
+                     int *err)
 {
   vt_config_def_t *root_def, *prev_def, *next_def, *itr;
   vt_lexer_t lxr;
@@ -623,15 +609,31 @@ vt_config_isopt (vt_config_t *opt)
 }
 
 vt_value_t *
-vt_config_getnval (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+vt_config_getnval (vt_config_t *opt, unsigned int idx, int *err)
 {
   assert (opt);
   assert (vt_config_isopt (opt));
 
   if (idx <= opt->data.opt.nvals)
     return opt->data.opt.vals[idx];
-  vt_errno (err, EINVAL);
+  vt_set_errno (err, EINVAL);
   return NULL;
+}
+
+vt_value_t *
+vt_config_getnval_priv (vt_config_t *opt, vt_value_type_t type,
+  unsigned int idx, int *err)
+{
+  vt_value_t *val;
+
+  assert (opt);
+
+  if (! (val = vt_config_getnval (opt, idx, err)))
+    return NULL;
+
+  assert (val->type == type);
+
+  return val;
 }
 
 unsigned int
@@ -644,7 +646,7 @@ vt_config_getnvals (vt_config_t *opt)
 }
 
 bool
-vt_config_getnbool (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+vt_config_getnbool (vt_config_t *opt, unsigned int idx, int *err)
 {
   vt_value_t *val;
 
@@ -657,7 +659,7 @@ vt_config_getnbool (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
 }
 
 long
-vt_config_getnint (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+vt_config_getnint (vt_config_t *opt, unsigned int idx, int *err)
 {
   vt_value_t *val;
 
@@ -670,7 +672,7 @@ vt_config_getnint (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
 }
 
 double
-vt_config_getnfloat (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+vt_config_getnfloat (vt_config_t *opt, unsigned int idx, int *err)
 {
   vt_value_t *val;
 
@@ -683,7 +685,7 @@ vt_config_getnfloat (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
 }
 
 char *
-vt_config_getnstr (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+vt_config_getnstr (vt_config_t *opt, unsigned int idx, int *err)
 {
   vt_value_t *val;
 
@@ -696,8 +698,8 @@ vt_config_getnstr (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
 }
 
 vt_config_t *
-vt_config_sec_getnopt (vt_config_t *sec, const char *nam, unsigned int idx,
-  vt_error_t *err)
+vt_config_sec_getnopt (vt_config_t *sec, const char *name, unsigned int idx,
+  int *err)
 {
   vt_config_t **opts;
   unsigned int i, j, nopts;
@@ -715,7 +717,7 @@ vt_config_sec_getnopt (vt_config_t *sec, const char *nam, unsigned int idx,
   }
 
   for (i = 0, j = 0; i < nopts; i++) {
-    if (nam && strcmp (opts[i]->name, nam) == 0)
+    if (name && strcmp (opts[i]->name, name) == 0)
       j++;
     else
       j++;
@@ -730,77 +732,50 @@ vt_config_sec_getnopt (vt_config_t *sec, const char *nam, unsigned int idx,
   return NULL;
 }
 
-long
-vt_config_sec_getnint (vt_config_t *sec, const char *name, unsigned int idx,
-  vt_error_t *err)
+vt_config_t *
+vt_config_sec_getnopt_priv (vt_config_t *sec, vt_value_type_t type,
+  const char *name, unsigned int idx, int *err)
 {
   vt_config_t *opt;
 
   assert (sec);
+  assert (sec->type == VT_CONFIG_TYPE_SEC || sec->type == VT_CONFIG_TYPE_FILE);
   assert (name);
 
   if (! (opt = vt_config_sec_getnopt (sec, name, 0, err)))
-    return 0;
+    return NULL;
 
-  assert (opt->type == VT_CONFIG_TYPE_INT);
+  assert (opt->type = type);
 
-  return vt_config_getnint (opt, idx, err);
+  return opt;
 }
 
+bool
+vt_config_sec_getnbool (vt_config_t *sec, const char *name, unsigned int idx,
+  int *err)
+{
+  vt_config_t *opt;
 
+  opt = vt_config_sec_getnopt_priv (sec, VT_CONFIG_TYPE_BOOL, name, idx, err);
+  return opt ? vt_config_getnbool (opt, idx, err) : false;
+}
 
+long
+vt_config_sec_getnint (vt_config_t *sec, const char *name, unsigned int idx,
+  int *err)
+{
+  vt_config_t *opt;
 
+  opt = vt_config_sec_getnopt_priv (sec, VT_CONFIG_TYPE_INT name, 0, err);
+  return opt ? vt_config_getnint (opt, idx, err) : 0;
+}
 
+double
+vt_config_sec_getnfloat (vt_config_t *sec, const char *name, unsigned int idx,
+  int *err)
+{
+  vt_config_t *opt;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  opt = vt_config_sec_getnopt (sec, VT_CONFIG_TYPE_FLOAT, name, idx, err);
+  return opt ? vt_config_getnfloat (opt, idx, err) : 0.0;
+}

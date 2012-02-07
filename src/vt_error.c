@@ -1,20 +1,58 @@
 /* system includes */
+#include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #define SYSLOG_NAMES 1
+#include <string.h>
 #include <syslog.h>
 
 /* valiant includes */
-#include "error.h"
+#include "vt_error.h"
 
+// FIXME: not thread-safe
 static int _vt_syslog_facility = -1;
 static int _vt_syslog_prio = -1;
 
+__thread char __vt_error_buf[VT_ERROR_BUFLEN];
+
 void
-vt_set_error (vt_error_t *dst, vt_error_t src)
+vt_set_errno (int *dst, int src)
 {
   if (dst)
     *dst = src;
+}
+
+char *
+vt_strerror (int err)
+{
+  char *buf;
+  int res;
+  size_t len;
+
+  buf = __vt_error_buf;
+  len = VT_ERROR_BUFLEN - 1;
+
+  if (err > 0) {
+    res = strerror_r (err, buf, len);
+    if (res == 0)
+      return buf;
+    goto unknown_error;
+  }
+
+  switch (err) {
+    case VT_ERR_BAD_REQUEST:
+      return "Invalid request";
+    case VT_ERR_BAD_MEMBER:
+      return "Invalid request member";
+    // FIXME: IMPLEMENT: return values for other error codes
+    default:
+      break;
+  }
+
+unknown_error:
+  (void)snprintf (buf, len, "Unknown error (%d)", err);
+  return buf;
 }
 
 int
