@@ -1,27 +1,27 @@
 #ifndef VT_ERROR_H_INCLUDED
-#define VT_ERROR_H_INCLUDED 1
+#define VT_ERROR_H_INCLUDED
 
 /* system includes */
 #include <stdarg.h>
+#include <errno.h>
 
-#define VT_SUCCESS (0)
-#define VT_ERR_NOMEM (1)
-#define VT_ERR_NOBUFS (2)
-#define VT_ERR_INVAL (3)
-#define VT_ERR_QFULL (4)
-#define VT_ERR_MAP (5)
-#define VT_ERR_ALREADY (6)
-#define VT_ERR_BADCFG (7)
-#define VT_ERR_BADMBR (8)
-#define VT_ERR_CONNFAILED (9)
-#define VT_ERR_NORETRY (10) /* permanent error */
-#define VT_ERR_RETRY (11) /* temporary error */
-#define VT_ERR_AGAIN (12)
-#define VT_ERR_BADREQUEST (13) /* bad request */
+/* #define VT_SUCCESS (0) // obsolete */
+/* #define VT_ERR_NOMEM (1) // obsolete, superseded by ENOMEM */
+/* #define VT_ERR_NOBUFS (2) // obsolete, superseded by ENOBUFS */
+/* #define VT_ERR_INVAL (3) // obsolete, superseded by EINVAL */
+/* #define VT_ERR_QFULL (4) // obsolete */
+/* #define VT_ERR_MAP (5) // obsolete */
+/* #define VT_ERR_ALREADY (6) // obsolete, superseded by EALREADY */
+/* #define VT_ERR_BADCFG (7) // obsolete */
+/* #define VT_ERR_BADMBR (8) // obsolete */
+/* #define VT_ERR_CONNFAILED (9) // obsolete */
+/* #define VT_ERR_NORETRY (10) // obsolete */
+/* #define VT_ERR_RETRY (11) // obsolete */
+/* #define VT_ERR_AGAIN (12) // obsolete, superseded by EAGAIN */
+/* #define VT_ERR_BADREQUEST (13) // obsolete */
 
-typedef int vt_error_t;
-
-void vt_set_error (vt_error_t *, vt_error_t);
+void vt_set_errno (int *, int);
+char *vt_strerror (int);
 int vt_syslog_factility (const char *); /* convert syslog facility into code */
 int vt_syslog_priority (const char *); /* convert syslog priority into code */
 void vt_syslog_open (const char *, int, int);
