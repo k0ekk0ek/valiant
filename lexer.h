@@ -106,6 +106,7 @@ struct _vt_lexer_def {
   int scan_binary : 1;
   int scan_octal : 1;
   int scan_float : 1;
+  int scan_int : 1;
   int scan_hex : 1;
   int scan_hex_dollar : 1;
   int scan_str_dquot : 1;
@@ -133,8 +134,9 @@ struct _vt_lexer {
   vt_value_t value;
 };
 
-void vt_lexer_def_clr (vt_lexer_def_t *);
-void vt_lexer_def_rst (vt_lexer_def_t *);
+//void vt_lexer_def_clr (vt_lexer_def_t *);
+void vt_lexer_def_reset (vt_lexer_def_t *);
+vt_token_t vt_lexer_get_next_token (vt_lexer_t *, vt_lexer_def_t *, vt_error_t *);
 
 //vt_lexer_t *vt_lexer_create (const char *, size_t, vt_error_t *err);
 //void vt_lexer_destroy (vt_lexer_t *lexer);

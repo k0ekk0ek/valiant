@@ -6,19 +6,206 @@
 #include <string.h>
 
 /* valiant includes */
+#include "buf.h"
 #include "config.h"
 #include "lexer.h"
 
-typedef enum _vt_config_state vt_config_state_t;
-
-enum _vt_config_state {
-  VT_CONFIG_STATE_NONE,
-  VT_CONFIG_STATE_SECTION,
-  VT_CONFIG_STATE_OPTION,
-  // ... FIXME: add more as needed
-};
-
 /* prototypes */
+int vt_config_parse_opt (vt_config_t *, vt_config_def_t *, vt_lexer_t *,
+  vt_errno_t *);
+int vt_config_parse_sec (vt_config_t *, vt_config_def_t *, vt_lexer_t *,
+  vt_errno_t *);
+int vt_config_parse (vt_config_t *, vt_config_def_t *, vt_lexer_t *,
+  vt_errno_t *);
+
+//
+
+vt_value_t *vt_config_getnval_priv (vt_config_t *, vt_value_type_t,
+  unsigned int, vt_errno_t);
+
+
+
+vt_config_t *
+vt_config_create (vt_config_t *cfg, vt_error_t *err)
+{
+  unsigned int nopts;
+  vt_config_t *opt, **opts;
+
+  if (! (opt = calloc (1, sizeof (vt_config_t)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    goto failure;
+  }
+
+  if (cfg) {
+    if (cfg->type == VT_CONFIG_TYPE_FILE) {
+      nopts = cfg->data.file.nopts + 1;
+      opts = realloc (cfg->data.file.opts, nopts * sizeof (vt_config_t));
+    } else if (cfg->type == VT_CONFIG_TYPE_SEC) {
+      nopts = cfg->data.sec.nopts + 1;
+      opts = realloc (cfg->data.sec.opts, nopts * sizeof (vt_config_t));
+    } else {
+      vt_panic ("%s: config_t not of type file, or section", __func__);
+    }
+
+    if (! opts) {
+      vt_set_error (err, VT_ERR_NOMEM);
+      vt_error ("%s: realloc: %s", __func__, strerror (errno));
+      goto failure;
+    }
+
+    opts[nopts - 1] = opt;
+
+    if (cfg->type == VT_CONFIG_TYPE_FILE) {
+      cfg->data.file.opts = opts;
+      cfg->data.file.nopts = nopts;
+    } else {
+      cfg->data.sec.opts = opts;
+      cfg->data.sec.nopts = nopts;
+    }
+  }
+
+  return opt;
+failure:
+  if (opt)
+    free (opt);
+  return NULL;
+}
+
+vt_value_t *
+vt_config_create_value (vt_config_t *cfg, vt_error_t *err)
+{
+  unsigned int nvals;
+  vt_value_t *val, **vals;
+
+  if (! (val = calloc (1, sizeof (vt_value_t)))) {
+    vt_set_error (err, VT_ERR_NOMEM);
+    vt_error ("%s: calloc: %s", __func__, strerror (errno));
+    return NULL;
+  }
+
+  if (cfg) {
+    switch (cfg->type) {
+      case VT_CONFIG_TYPE_BOOL:
+        val->type = VT_VALUE_TYPE_BOOL;
+        break;
+      case VT_CONFIG_TYPE_INT:
+        val->type = VT_VALUE_TYPE_INT;
+        break;
+      case VT_CONFIG_TYPE_FLOAT:
+        val->type = VT_VALUE_TYPE_FLOAT;
+        break;
+      case VT_CONFIG_TYPE_STRING:
+        val->type = VT_VALUE_TYPE_STRING;
+        break;
+      default:
+        vt_panic ("%s: option has unsupported value type", __func__);
+    }
+
+    nvals = cfg->data.opt.nvals + 1;
+    if (! (vals = realloc (cfg->data.opt.vals, nvals * sizeof (vt_value_t)))) {
+      vt_set_error (err, VT_ERR_NOMEM);
+      vt_error ("%s: realloc: %s", __func__, strerror (errno));
+      goto failure;
+    }
+
+    vals[nvals - 1] = val;
+
+    cfg->data.opt.vals = vals;
+    cfg->data.opt.nvals = nvals;
+  }
+
+  return val;
+failure:
+  if (val)
+    free (val);
+  return NULL;
+}
+
+
+void
+vt_config_init_file (vt_config_t *sec)
+{
+  assert (sec);
+  sec->type = VT_CONFIG_TYPE_FILE;
+  memset (sec->data.file.path, '\0', VT_CONFIG_PATH_MAX);
+  sec->data.file.opts = NULL;
+  sec->data.file.nopts = 0;
+}
+
+void
+vt_config_init_sec (vt_config_t *sec)
+{
+  assert (sec);
+  sec->type = VT_CONFIG_TYPE_SEC;
+  memset (sec->data.sec.title, '\0', VT_CONFIG_TITLE_MAX);
+  sec->data.sec.opts = NULL;
+  sec->data.sec.nopts = 0;
+}
+
+void
+vt_config_init_opt (vt_config_t *opt, vt_config_def_t *def)
+{
+  assert (opt);
+  opt->type = def->type;
+  opt->data.opt.vals = NULL;
+  opt->data.opt.nvals = 0;
+}
+
+void
+vt_config_prep_lexer_def (vt_lexer_def_t *lxr_def, vt_config_def_t *def)
+{
+  assert (lxr_def);
+  assert (def);
+
+  vt_lexer_def_reset (lxr_def);
+
+  switch (def->type) {
+    case VT_CONFIG_TYPE_SEC:
+      if (def->data.sec.title)
+        lxr_def->str = def->data.sec.title;
+      else
+        lxr_def->str = VT_CHRS_STR;
+      break;
+    case VT_CONFIG_TYPE_BOOL:
+      lxr_def->scan_bool = 1;
+      lxr_def->scan_binary = 0;
+      lxr_def->scan_octal = 0;
+      lxr_def->scan_float = 0;
+      lxr_def->scan_int = 0;
+      lxr_def->scan_hex = 0;
+      lxr_def->scan_hex_dollar = 0;
+      lxr_def->scan_str_dquot = 0;
+      lxr_def->scan_str_squot = 0;
+      break;
+    case VT_CONFIG_TYPE_INT:
+      lxr_def->scan_bool = 0;
+      lxr_def->scan_float = 0;
+      lxr_def->scan_str_dquot = 0;
+      lxr_def->scan_str_squot = 0;
+      lxr_def->numbers_as_int = 1;
+      lxr_def->int_as_float = 0;
+      break;
+    case VT_CONFIG_TYPE_FLOAT:
+      lxr_def->scan_bool = 0;
+      lxr_def->scan_str_dquot = 0;
+      lxr_def->scan_str_squot = 0;
+      lxr_def->numbers_as_int = 1;
+      lxr_def->int_as_float = 1;
+      break;
+    case VT_CONFIG_TYPE_STRING:
+      lxr_def->scan_bool = 0;
+      lxr_def->scan_binary = 0;
+      lxr_def->scan_octal = 0;
+      lxr_def->scan_float = 0;
+      lxr_def->scan_int = 0;
+      lxr_def->scan_hex = 0;
+      lxr_def->scan_hex_dollar = 0;
+      lxr_def->dquot = def->data.opt.dquot;
+      lxr_def->squot = def->data.opt.squot;
+      break;
+  }
+}
 
 int
 vt_config_parse_sec (vt_config_t *sec,
@@ -28,49 +215,60 @@ vt_config_parse_sec (vt_config_t *sec,
 {
   int loop, title;
   vt_config_def_t *defs;
-  vt_lexer_t *lxr;
-  vt_lexer_scope_def_t *lxr_def;
-  vt_error_t *err;
+  vt_lexer_def_t lxr_def;
+  vt_token_t token;
 
   assert (sec);
   assert (def);
   assert (lxr);
 
-  // well the section might have weird characters in it's title!
+  vt_config_prep_lexer_def (&lxr_def, def);
 
   for (loop = 1; loop;) {
-    tok = vt_lexer_get_token (lxr, err);
+    token = vt_lexer_get_token (lxr, &lxr_def, err);
 
-    switch (tok) {
-      case VT_LEXER_TOKEN_EOF:
-        // FIXME: IMPLEMENT
-        break;
-      case VT_LEXER_TOKEN_ERROR:
-        // FIXME: IMPLEMENT
-        break;
-      case VT_LEXER_TOKEN_COMMENT_SINGLE:
-      case VT_LEXER_TOKEN_COMMENT_MULTI:
+    switch (token) {
+      case VT_TOKEN_EOF:
+        vt_set_error (err, VT_ERR_BADCFG);
+        vt_error ("unexpected end of file");
+      case VT_TOKEN_ERROR:
+        goto failure;
+      case VT_TOKEN_COMMENT_SINGLE:
+      case VT_TOKEN_COMMENT_MULTI:
         /* always ignore comments */
         break;
-      case VT_LEXER_TOKEN_LEFT_CURLY:
-        val = vt_lexer_get_value (lxr);
-
+      case VT_TOKEN_LEFT_CURLY:
         /* verify we have a title if configured */
         if (def->flags & VT_CONFIG_FLAG_TITLE && ! strlen (sec->data.sec.title)) {
-          vt_set_error (err, VT_ERR_...);
+          vt_set_error (err, VT_ERR_BADCFG);
           vt_error ("unexpected curly bracket on line %u, column %u",
-            val->lineno, val->colno);
+            lxr->line, lxr->column);
           goto failure;
         }
 
         return vt_config_parse (sec, def->data.sec.opts, lxr, err);
-
-      case VT_LEXER_TOKEN_IDENT:
-        // ok... wel we musn't have a title yet...
-        // and we must demand a title!
+      case VT_TOKEN_STRING:
+        /* verify section is supposed to have a title */
+        if (! (def->flags & VT_CONFIG_FLAG_TITLE) || strlen (sec->data.sec.title)) {
+          vt_set_error (err, VT_ERR_BADCFG);
+          vt_error ("unexpected title on line %u, column %u",
+            lxr->line, lxr->column);
+          goto failure;
+        } else {
+          sec->flags |= VT_CONFIG_FLAG_TITLE;
+          (void)strncpy (sec->data.sec.title, lxr->value.data.str, VT_CONFIG_TITLE_MAX);
+        }
         break;
       default:
         /* all other tokens are illegal by default */
+        vt_set_error (err, VT_ERR_BADCFG);
+        if (token < VT_TOKEN_NONE)
+          vt_error ("unexpected character %c on line %u, column %u",
+            lxr->value.data.chr, lxr->line, lxr->column);
+        else
+          vt_error ("unexpected token on line %u, column %u",
+            lxr->line, lxr->column);
+        goto failure;
     }
   }
 
@@ -78,32 +276,108 @@ vt_config_parse_sec (vt_config_t *sec,
 failure:
   /* cleanup */
   return -1;
-
-  // FIXME: IMPLEMENT
-        //if (state == VT_CONFIG_STATE_TITLE) {
-        //
-        //} else if (state == VT_CONFIG
-        //  if (next_def->flags & VT_CONFIG_FLAG_TITLE) {
-        //    vt_set_error (err, VT_ERR_UNEXP_TITLE);
-        //    vt_error ("unexpected title %s on line %u, column %u",
-        //      value->subopt.string, value->lineno, value->colno);
-        //    goto failure;
-        //  }
-        //
-        //} else {
-        //  // its an identifier... perhaps even an option?!?!
-        //}
 }
 
 int
-vt_config_parse_opt (vt_config_t *cfg,
+vt_config_parse_opt (vt_config_t *opt,
                      vt_config_def_t *def,
                      vt_lexer_t *lxr,
                      vt_error_t *err)
 {
-  // FIXME: IMPLEMENT
-  int loop;
-  //vt_config_t *
+  char *spec;
+  int loop, state;
+  vt_lexer_def_t lxr_def;
+  vt_token_t token;
+  vt_value_t *val;
+  vt_config_prep_lexer_def (&lxr_def, def);
+vt_error ("option: %s", opt->name);
+
+  for (loop = 1, state = 0; loop;) {
+    token = vt_lexer_get_next_token (lxr, &lxr_def, err);
+    switch (token) {
+    case VT_TOKEN_EOF:
+      if (state == 0)
+        vt_error ("unexpected end of file");
+      return 0;
+    case VT_TOKEN_ERROR:
+      goto failure;
+    case VT_TOKEN_EQUAL_SIGN:
+vt_error ("equal sign");
+      if (state != 0)
+        goto unexpected;
+      state = 1;
+      break;
+    case VT_TOKEN_COMMA:
+      if (state != 2)
+        goto unexpected;
+      state = 1;
+      break;
+    case VT_TOKEN_BOOL:
+    case VT_TOKEN_INT:
+    case VT_TOKEN_FLOAT:
+    case VT_TOKEN_STRING:
+      if (state == 2 && token == VT_TOKEN_STRING)
+        return 0;
+      if (state != 1 || (def->type == VT_CONFIG_TYPE_BOOL   && lxr->value.type != VT_VALUE_TYPE_BOOL)   ||
+                        (def->type == VT_CONFIG_TYPE_INT    && lxr->value.type != VT_VALUE_TYPE_INT)    ||
+                        (def->type == VT_CONFIG_TYPE_FLOAT  && lxr->value.type != VT_VALUE_TYPE_FLOAT)  ||
+                        (def->type == VT_CONFIG_TYPE_STRING && lxr->value.type != VT_VALUE_TYPE_STRING))
+        goto unexpected;
+      if (! (val = vt_config_create_value (opt, err)))
+        goto failure;
+vt_error ("value");
+vt_error ("def flags2: %u", def->flags);
+      /* populate value */
+      val->type = lxr->value.type;
+      if (lxr->value.type == VT_VALUE_TYPE_BOOL) {
+        val->data.bln = lxr->value.data.bln;
+      } else if (lxr->value.type == VT_VALUE_TYPE_INT) {
+vt_error ("value: %d", lxr->value.data.lng);
+        val->data.lng = lxr->value.data.lng;
+      } else if (lxr->value.type == VT_VALUE_TYPE_FLOAT) {
+        val->data.dbl = lxr->value.data.dbl;
+      } else if (lxr->value.type == VT_VALUE_TYPE_STRING) {
+        val->data.str = strdup (lxr->value.data.str);
+        if (! val->data.str) {
+          vt_set_error (err, VT_ERR_NOMEM);
+          vt_error ("%s: strdup: %s", __func__, strerror (errno));
+          goto failure;
+        }
+      }
+vt_error ("def flags3: %u", def->flags);
+      if (! (def->flags & VT_CONFIG_FLAG_LIST))
+        return 0;
+vt_error ("wtf");
+      state = 2;
+      break;
+    default:
+unexpected:
+      if (token < VT_TOKEN_NONE) {
+        vt_error ("unexpected character %c on line line %u, column %u",
+          token, lxr->line, lxr->column);
+      } else {
+        if (token == VT_TOKEN_BOOL)
+          spec = "boolean value";
+        else if (token == VT_TOKEN_INT)
+          spec = "integer value";
+        else if (token == VT_TOKEN_FLOAT)
+          spec = "floating point value";
+        else if (token == VT_TOKEN_STRING)
+          spec = "string value";
+        else
+          spec = "value";
+        vt_error ("unexpected %s on line %u, column %u",
+          spec, lxr->line, lxr->column);
+      }
+      vt_set_error (err, VT_ERR_BADCFG);
+      goto failure;
+    }
+  }
+
+  return 0;
+failure:
+  /* cleanup */
+  return -1;
 }
 
 int
@@ -115,65 +389,75 @@ vt_config_parse (vt_config_t *sec,
   int loop;
   vt_config_t *opt;
   vt_config_def_t *def;
-  vt_lexer_value_t *val;
-  vt_lexer_token_t *tok;
+  vt_lexer_def_t lxr_def;
+  vt_token_t token;
 
   assert (sec);
   assert (defs);
   assert (lxr);
 
-  for (loop = 1; loop;) {
-    tok = vt_lexer_get_token (lxr, def, err);
+  vt_lexer_def_reset (&lxr_def);
 
-    switch (tok) {
-      case VT_LEXER_TOKEN_EOF:
+  for (loop = 1; loop;) {
+    token = vt_lexer_get_next_token (lxr, &lxr_def, err);
+inspect:
+    switch (token) {
+      case VT_TOKEN_EOF:
         // FIXME: IMPLEMENT
-        break;
-      case VT_LEXER_TOKEN_ERROR:
-        // FIXME: IMPLEMENT
-        break;
-      case VT_LEXER_TOKEN_COMMENT_SINGLE:
-      case VT_LEXER_TOKEN_COMMENT_MULTI:
-        /* always ignore comments */
-        break;
-      case VT_LEXER_TOKEN_LEFT_CURLY:
+        // if we're in a section... that's an error
         loop = 0;
         break;
-      case VT_LEXER_TOKEN_RIGHT_CURLY:
-        // do we even have a title for the current
-        // or an identifier... if yes... recurse
+      case VT_TOKEN_ERROR:
+        // FIXME: IMPLEMENT
+        loop = 0;
         break;
-      case VT_LEXER_TOKEN_IDENT:
-        val = vt_lexer_get_value (lxr);
-
+      case VT_TOKEN_COMMENT_SINGLE:
+      case VT_TOKEN_COMMENT_MULTI:
+        /* always ignore comments */
+        break;
+      case VT_TOKEN_RIGHT_CURLY:
+        if (sec->type == VT_CONFIG_TYPE_FILE)
+          goto unexpected;
+        return 0;
+        break;
+      case VT_TOKEN_STRING:
         /* option or section name must be known in config defs */
         for (def = defs; def->type != VT_CONFIG_TYPE_NONE; def++) {
-          if (def->name && strcmp (val->somechld.string, def->name) == 0)
+          if (def->name && strcmp (lxr->value.data.str, def->name) == 0)
             break;
         }
 
         if (def->type == VT_CONFIG_TYPE_NONE) {
           vt_set_error (err, VT_ERR_INVAL);
           vt_error ("unknown option %s on line %u, column %u",
-            val->somechld.string, val->lineno, val->colno);
+            lxr->value.data.str, lxr->line, lxr->column);
           goto failure;
         }
 
-        if (! (opt = vt_config_create (parent, err))) {
+        if (! (opt = vt_config_create (sec, err)))
           goto failure;
-        }
 
-        (void) strncpy (opt->name, val->somechld.string, VT_CONFIG_NAME_MAX);
-        if (def->type == VT_CONFIG_TYPE_SEC)
+        (void) strncpy (opt->name, lxr->value.data.str, VT_CONFIG_NAME_MAX);
+        if (def->type == VT_CONFIG_TYPE_SEC) {
+          vt_config_init_sec (opt);
           if (vt_config_parse_sec (opt, def, lxr, err) < 0)
             goto failure;
-        else
+        } else {
+vt_error ("option");
+          vt_config_init_opt (opt, def);
           if (vt_config_parse_opt (opt, def, lxr, err) < 0)
             goto failure;
-
+vt_error ("option done");
+          /* option parser is always one token ahead, except for end of file */
+          if (def->flags & VT_CONFIG_FLAG_LIST)
+            goto inspect;
+        }
         break;
       default:
+unexpected:
         // FIXME: IMPLEMENT
+        vt_error ("%s: unexpected, FIX ERROR MESSAGE ;)", __func__);
+        goto failure;
     }
 
 
@@ -188,102 +472,42 @@ failure:
 
 
 vt_config_t *
-vt_config_parse_str (vt_config_def_t *def,
+vt_config_parse_str (vt_config_def_t *defs,
                      const char *str,
                      size_t len,
                      vt_error_t *err)
 {
   vt_config_def_t *root_def, *prev_def, *next_def, *itr;
-  vt_config_state_t state;
-  vt_lexer_t *lxr;
-  vt_lexer_def lxr_def;
-  vt_lexer_scope_def lxr_scope_def;
+  vt_lexer_t lxr;
   vt_token_t tok;
 
-  assert (def);
+  assert (defs);
   assert (str);
 
   // 0. populate lexer def, which is used for global defaults!
 
   // 1. create shiny new lexer
+  vt_config_t *cfg;
+  memset (&lxr, 0, sizeof (vt_lexer_t));
+  lxr.str = (char *)str;
+  lxr.len = len;
+  lxr.lines = 1;
+  lxr.columns = 1;
+  //if (! (cfg = vt_lexer_create (NULL, err)))
+  //  return NULL;
 
-  if (! (vt_lexer_create (&lxr_def, err)))
-    return NULL;
+  //root_def = def;
+  //prnt_def = def;
 
-  // 2. loop and get all tokens... create little state machine!
-
-  root_def = def;
-  prnt_def = def;
-
-  for (;;) {
-    tok = vt_lexer_get_token (lxr, lxr_scope_def, err);
-
-    if (tok == VT_TOKEN_COMMENT_SINGLE || tok == VT_TOKEN_COMMENT_MULTI)
-      continue; /* always ignore comments */
-
-    if (state == VT_CONFIG_STATE_NONE) {
-      if (tok == VT_TOKEN_IDENT) {
-        /* if we're in a section, check if the option is known */
-        if (def->type == VT_CONFIG_TYPE_SEC) {
-          next_def = NULL;
-          if (! def->opts)
-            goto unexp_opt;
-
-          for (itr = def->opts; itr->type != VT_CONFIG_TYPE_NONE; itr++) {
-            if (itr->name && strcmp (lxr->value. itr->name) == 0) {
-              next_def = itr;
-              break;
-            }
-          }
-
-          if (! next_def)
-            goto unexp_opt;
-
-        /* COMMENT */
-        } else {
-          if (strcmp (lex
-        }
-      } else {
-        // ERROR!
-      }
-
-      // 3. expect option or section... comments can be safely ignored all other
-      //    tokens will generate error!
-
-    }
-  }
-
-//  char *value;
-//  vt_config_t *cfg;
-//  vt_lexer_t *lxr;
-//  vt_lexer_token_t tok;
-//
-//  vt_lexer_opts_t lxropts;
-//
-//  lxropts.class = "abcdefghijklmnopqrstuvwxyz";
-//  lxropts.delim = "/\"'";
-//  lxropts.sep = ",";
-//
-//  if (! (lxr = vt_lexer_create (str, len, err))) {
-    //goto failure;
-  //}
-//vt_error ("start parsing!\n");
-//  // now we can start parsing this stuff!
-//  for (; (tok = vt_lexer_get_token (lxr, &lxropts, err)) != VT_TOKEN_EOF
-//   && tok != VT_TOKEN_ERROR;) {
-//    //
-//    // just try something for know?!?!
-//    //
-//    value = vt_lexer_gets (lxr);
-//    vt_error ("token: %d, value: %s", tok, value);
-//  }
-//
-//  if (tok == VT_TOKEN_ERROR) {
-//    vt_error ("ERROR!: %d", *err);
-//  }
-//
-//failure:
-//  return NULL;
+  if (! (cfg = vt_config_create (NULL, err)))
+    goto failure;
+  vt_config_init_file (cfg);
+  if (vt_config_parse (cfg, defs, &lxr, err) < 0)
+    goto failure;
+  return cfg;
+failure:
+  /* FIXME: IMPLEMENT: CLEANUP */
+  return NULL;
 }
 
 
@@ -345,9 +569,9 @@ again:
   str = vt_buf_str (&buf);
   len = vt_buf_len (&buf);
 
-  vt_error ("conf: %s\n", str);
+  //vt_error ("conf: %s\n", str);
 
-  if (! (cfg = vt_config_parse_buffer (def, str, len, err)))
+  if (! (cfg = vt_config_parse_str (def, str, len, err)))
     goto failure;
 
   return cfg;
@@ -356,3 +580,227 @@ failure:
   return NULL;
 #undef BUFLEN
 }
+
+/**
+ ** INTERFACE FUNCTIONS
+ **/
+
+char *
+vt_config_getname (vt_config_t *cfg)
+{
+  assert (cfg);
+
+  return cfg->name;
+}
+
+int
+vt_config_isfile (vt_config_t *cfg)
+{
+  assert (cfg);
+
+  return (cfg->type == VT_CONFIG_TYPE_FILE) ? 1 : 0;
+}
+
+int
+vt_config_issec (vt_config_t *cfg)
+{
+  assert (cfg);
+
+  return (cfg->type == VT_CONFIG_TYPE_SEC) ? 1 : 0;
+}
+
+int
+vt_config_isopt (vt_config_t *opt)
+{
+  assert (opt);
+
+  if (opt->type == VT_CONFIG_TYPE_BOOL   ||
+      opt->type == VT_CONFIG_TYPE_INT    ||
+      opt->type == VT_CONFIG_TYPE_FLOAT  ||
+      opt->type == VT_CONFIG_TYPE_STRING)
+    return 1;
+  return 0;
+}
+
+vt_value_t *
+vt_config_getnval (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+{
+  assert (opt);
+  assert (vt_config_isopt (opt));
+
+  if (idx <= opt->data.opt.nvals)
+    return opt->data.opt.vals[idx];
+  vt_errno (err, EINVAL);
+  return NULL;
+}
+
+unsigned int
+vt_config_getnvals (vt_config_t *opt)
+{
+  assert (opt);
+  assert (vt_config_isopt (opt));
+
+  return opt->data.opt.nvals;
+}
+
+bool
+vt_config_getnbool (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+{
+  vt_value_t *val;
+
+  assert (opt);
+  assert (opt->type == VT_CONFIG_TYPE_BOOL);
+
+  if (! (val = vt_config_getnval_priv (opt, VT_VALUE_TYPE_BOOL, idx, err)))
+    return false;
+  return val->data.bln;
+}
+
+long
+vt_config_getnint (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+{
+  vt_value_t *val;
+
+  assert (opt);
+  assert (opt->type == VT_CONFIG_TYPE_INT);
+
+  if (! (val = vt_config_getnval_priv (opt, VT_VALUE_TYPE_INT, idx, err)))
+    return 0;
+  return val->data.lng;
+}
+
+double
+vt_config_getnfloat (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+{
+  vt_value_t *val;
+
+  assert (opt);
+  assert (opt->type == VT_CONFIG_TYPE_FLOAT);
+
+  if (! (val = vt_config_getnval_priv (opt, VT_VALUE_TYPE_FLOAT, idx, err)))
+    return 0.0;
+  return val->data.dbl;
+}
+
+char *
+vt_config_getnstr (vt_config_t *opt, unsigned int idx, vt_errno_t *err)
+{
+  vt_value_t *val;
+
+  assert (opt);
+  assert (vt_config_isopt (opt));
+
+  if (! (val = vt_config_getnval_priv (opt, VT_VALUE_TYPE_STRING, idx, err)))
+    return NULL;
+  return val->data.str;
+}
+
+vt_config_t *
+vt_config_sec_getnopt (vt_config_t *sec, const char *nam, unsigned int idx,
+  vt_error_t *err)
+{
+  vt_config_t **opts;
+  unsigned int i, j, nopts;
+
+  assert (sec);
+  assert (sec->type == VT_CONFIG_TYPE_FILE || sec->type == VT_CONFIG_TYPE_SEC);
+  /* name can be NULL to get option based on index only */
+
+  if (sec->type == VT_CONFIG_TYPE_FILE) {
+    opts = sec->data.file.opts;
+    nopts = sec->data.file.nopts;
+  } else {
+    opts = sec->data.sec.opts;
+    nopts = sec->data.sec.nopts;
+  }
+
+  for (i = 0, j = 0; i < nopts; i++) {
+    if (nam && strcmp (opts[i]->name, nam) == 0)
+      j++;
+    else
+      j++;
+
+    if ((j > 0) && (j - 1) == idx)
+      break;
+  }
+
+  if ((j - 1) == idx)
+    return opts[i];
+  vt_set_errno (err, EINVAL);
+  return NULL;
+}
+
+long
+vt_config_sec_getnint (vt_config_t *sec, const char *name, unsigned int idx,
+  vt_error_t *err)
+{
+  vt_config_t *opt;
+
+  assert (sec);
+  assert (name);
+
+  if (! (opt = vt_config_sec_getnopt (sec, name, 0, err)))
+    return 0;
+
+  assert (opt->type == VT_CONFIG_TYPE_INT);
+
+  return vt_config_getnint (opt, idx, err);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

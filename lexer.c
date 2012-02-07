@@ -34,7 +34,7 @@ vt_lexer_def_clr (vt_lexer_def_t *def)
 }
 
 void
-vt_lexer_def_rst (vt_lexer_def_t *def)
+vt_lexer_def_reset (vt_lexer_def_t *def)
 {
   assert (def);
 
@@ -203,7 +203,7 @@ vt_lexer_unesc_str_dquot (const char *str, size_t len, int dquot, vt_error_t *er
 
   esc = 0;
 
-  for (i = first; i < len && str[i]; i++) {
+  for (i = first, j = 0; i < len && str[i]; i++) {
     if (esc) {
       esc = 0;
       if (str[i] == 'a')
@@ -280,7 +280,7 @@ vt_lexer_unesc_str_squot (const char *str, size_t len, int squot, vt_error_t *er
 
   esc = 0;
 
-  for (i = first; i < len && str[i]; i++) {
+  for (i = first, j = 0; i < len && str[i]; i++) {
     if (esc) {
       esc = 0;
       if (str[i] != squot)
@@ -305,6 +305,20 @@ vt_lexer_get_pos (vt_lexer_t *lxr)
 {
   assert (lxr);
   return (lxr->pos > 0) ? lxr->pos - 1 : 0;
+}
+
+size_t
+vt_lexer_get_cur_column (vt_lexer_t *lxr)
+{
+  assert (lxr);
+  return (lxr->columns > 0) ? lxr->columns - 1 : 1;
+}
+
+size_t
+vt_lexer_get_cur_line (vt_lexer_t *lxr)
+{
+  assert (lxr);
+  return lxr->lines;
 }
 
 int
@@ -410,20 +424,8 @@ vt_lexer_is_chr (int chr,
 }
 
 int
-vt_lexer_is_true (int glbl_bln, int def_bln, int scp_def_bln)
+vt_lexer_def_mbr_is_true (int glbl_bln, int def_bln, int scp_def_bln)
 {
-//  vt_error ("%d, %d, %d", glbl_bln, def_bln, scp_def_bln);
-  if (scp_def_bln != -1)
-    return (scp_def_bln) ? 1 : 0;
-  if (def_bln != -1)
-    return (def_bln) ? 1 : 0;
-  return glbl_bln;
-}
-
-int
-vt_lexer_def_true (int glbl_bln, int def_bln, int scp_def_bln)
-{
-  vt_error ("%d, %d, %d", glbl_bln, def_bln, scp_def_bln);
   if (scp_def_bln != -1)
     return (scp_def_bln) ? 1 : 0;
   if (def_bln != -1)
@@ -442,31 +444,31 @@ vt_lexer_def_true (int glbl_bln, int def_bln, int scp_def_bln)
 #define vt_is_squot(chr, def, scp_def) \
   (vt_lexer_is_chr ((chr), VT_CHRS_SQUOT, ((def) ? (def)->squot : NULL), ((scp_def) ? (scp_def)->squot : NULL)))
 
-#define vt_lexer_def_mbr_true(glbl_bln, def, scp_def, mbr) \
-  (vt_lexer_def_true ((glbl_bln), ((def) ? ((def)->mbr ? 1 : 0) : -1), ((scp_def) ? ((scp_def)->mbr ? 1 : 0) : -1)))
+#define vt_lexer_def_is_true(glbl_bln, def, scp_def, mbr) \
+  (vt_lexer_def_mbr_is_true ((glbl_bln), ((def) ? ((def)->mbr ? 1 : 0) : -1), ((scp_def) ? ((scp_def)->mbr ? 1 : 0) : -1)))
 
 #define vt_skip_comment_single(def, scp_def) \
-  (vt_lexer_is_true (VT_SKIP_COMMENT_SINGLE, ((def) ? (def)->skip_comment_single : -1), ((scp_def) ? (scp_def)->skip_comment_single : -1)))
+  (vt_lexer_def_is_true (VT_SKIP_COMMENT_SINGLE, (def), (scp_def), skip_comment_single))
 #define vt_skip_comment_multi(def, scp_def) \
-  (vt_lexer_is_true (VT_SKIP_COMMENT_MULTI, ((def) ? (def)->skip_comment_multi : -1), ((scp_def) ? (scp_def)->skip_comment_multi : -1)))
+  (vt_lexer_def_is_true (VT_SKIP_COMMENT_MULTI, (def), (scp_def), skip_comment_multi))
 #define vt_scan_bool(def, scp_def) \
-  (vt_lexer_is_true (VT_SCAN_BOOL, ((def) ? (def)->scan_bool : -1), ((scp_def) ? (scp_def)->scan_bool : -1)))
+  (vt_lexer_def_is_true (VT_SCAN_BOOL, (def), (scp_def), scan_bool))
 #define vt_scan_binary(def, scp_def) \
-  (vt_lexer_is_true (VT_SCAN_BINARY, ((def) ? (def)->scan_binary : -1), ((scp_def) ? (scp_def)->scan_binary : -1)))
+  (vt_lexer_def_is_true (VT_SCAN_BINARY, (def), (scp_def), scan_binary))
 #define vt_scan_octal(def, scp_def) \
-  (vt_lexer_is_true (VT_SCAN_OCTAL, ((def) ? (def)->scan_octal : -1), ((scp_def) ? (scp_def)->scan_octal : -1)))
+  (vt_lexer_def_is_true (VT_SCAN_OCTAL, (def), (scp_def), scan_octal))
 #define vt_scan_float(def, scp_def) \
-  (vt_lexer_is_true (VT_SCAN_FLOAT, ((def) ? (def)->scan_float : -1), ((scp_def) ? (scp_def)->scan_float : -1)))
+  (vt_lexer_def_is_true (VT_SCAN_FLOAT, (def), (scp_def), scan_float))
 #define vt_scan_hex(def, scp_def) \
-  (vt_lexer_is_true (VT_SCAN_HEX, ((def) ? (def)->scan_hex : -1), ((scp_def) ? (scp_def)->scan_hex : -1)))
+  (vt_lexer_def_is_true (VT_SCAN_HEX, (def), (scp_def), scan_hex))
 #define vt_scan_hex_dollar(def, scp_def) \
-  (vt_lexer_is_true (VT_SCAN_HEX_DOLLAR, ((def) ? (def)->scan_hex_dollar : -1), ((scp_def) ? (scp_def)->scan_hex_dollar : -1)))
+  (vt_lexer_def_is_true (VT_SCAN_HEX_DOLLAR, (def), (scp_def), scan_hex_dollar))
 #define vt_numbers_as_int(def, scp_def) \
-  (vt_lexer_is_true (VT_NUMBERS_AS_INT, ((def) ? (def)->numbers_as_int : -1), ((scp_def) ? (scp_def)->numbers_as_int : -1)))
+  (vt_lexer_def_is_true (VT_NUMBERS_AS_INT, (def), (scp_def), numbers_as_int))
 #define vt_int_as_float(def, scp_def) \
-  (vt_lexer_def_mbr_true (VT_INT_AS_FLOAT, (def), (scp_def), int_as_float))
+  (vt_lexer_def_is_true (VT_INT_AS_FLOAT, (def), (scp_def), int_as_float))
 #define vt_char_as_token(def, scp_def) \
-  (vt_lexer_is_true (VT_CHAR_AS_TOKEN, ((def) ? (def)->char_as_token : -1), ((scp_def) ? (scp_def)->char_as_token : -1)))
+  (vt_lexer_def_is_true (VT_CHAR_AS_TOKEN, (def), (scp_def), char_as_token))
 
 vt_token_t
 vt_lexer_get_next_token (vt_lexer_t *lxr,
@@ -492,147 +494,154 @@ vt_lexer_get_next_token (vt_lexer_t *lxr,
   token = VT_TOKEN_NONE;
 
   for (loop = 1; loop > 0 && (chr = vt_lexer_get_chr (lxr)) ;) {
-    switch (token) {
-      case VT_TOKEN_COMMENT_SINGLE:
-        if (chr == '\n') {
-          if (vt_skip_comment_single (def, scp_def))
-            token = VT_TOKEN_NONE;
-          else
-            loop = 0;
-        }
-        break;
-      case VT_TOKEN_COMMENT_MULTI:
-        if (chr == '*' && (chr = vt_lexer_get_chr (lxr)) == '/') {
-          if (vt_skip_comment_multi (def, scp_def))
-            token = VT_TOKEN_NONE;
-          else
-            loop = 0;
-        }
-        break;
-      case VT_TOKEN_STRING:
-        if (quot) {
-          if (esc)
-            esc = 0;
-          else if (chr == quot)
-            loop = 0;
-          else if (chr == '\\')
-            esc = 1;
+    if (loop == 1) {
+      switch (token) {
+        case VT_TOKEN_COMMENT_SINGLE:
+          if (chr == '\n') {
+            if (vt_skip_comment_single (def, scp_def))
+              token = VT_TOKEN_NONE;
+            else
+              loop = 0;
+          }
           break;
-        } else {
-          if (vt_is_space (chr, def, scp_def) || ! vt_is_str (chr, def, scp_def))
+        case VT_TOKEN_COMMENT_MULTI:
+          if (chr == '*' && (chr = vt_lexer_get_chr (lxr)) == '/') {
+            if (vt_skip_comment_multi (def, scp_def))
+              token = VT_TOKEN_NONE;
+            else
+              loop = 0;
+          }
+          break;
+        case VT_TOKEN_STRING:
+          if (quot) {
+            if (esc)
+              esc = 0;
+            else if (chr == quot)
+              loop = 0;
+            else if (chr == '\\')
+              esc = 1;
+            break;
+          } else {
+            if (vt_is_space (chr, def, scp_def) || ! vt_is_str (chr, def, scp_def))
+              loop = -1;
+          }
+          break;
+        case VT_TOKEN_BINARY:
+        case VT_TOKEN_OCTAL:
+        case VT_TOKEN_INT:
+        case VT_TOKEN_HEX:
+        case VT_TOKEN_FLOAT:
+          if (chr == '.') {
+            if (dot) {
+              goto error_float_malformed;
+            } else if (token == VT_TOKEN_INT || token == VT_TOKEN_OCTAL) {
+              dot = 1;
+              token = VT_TOKEN_FLOAT;
+            } else {
+              goto error_non_digit_in_const;
+            }
+          /* hexadecimal value */
+          /* scientific notation in floating point value */
+          } else if (chr == 'e' || chr == 'E') {
+            nchr = vt_lexer_peek_chr (lxr, 1);
+            /* scientific notation in floating point value */
+            if (nchr == '-' || nchr == '+') {
+              if (token == VT_TOKEN_FLOAT)
+                chr = vt_lexer_get_chr (lxr);
+              else
+                goto error_non_digit_in_const;
+            } else if ((token != VT_TOKEN_HEX   && ! (def->scan_float)) ||
+                       (token != VT_TOKEN_HEX   &&
+                        token != VT_TOKEN_FLOAT &&
+                        token != VT_TOKEN_OCTAL &&
+                        token != VT_TOKEN_INT))
+            {
+              goto error_non_digit_in_const;
+            } else if (token != VT_TOKEN_HEX) {
+              token = VT_TOKEN_FLOAT;
+              loop = 0;
+            }
+          /* end of */
+          } else if (! isdigit (chr) && ! (isxdigit (chr) && token == VT_TOKEN_HEX)) {
             loop = -1;
-        }
-        break;
-      case VT_TOKEN_OCTAL:
-      case VT_TOKEN_INT:
-      case VT_TOKEN_HEX:
-      case VT_TOKEN_FLOAT:
-        if (chr == '.') {
-          if (dot) {
-            goto error_float_malformed;
-          } else if (token == VT_TOKEN_INT || token == VT_TOKEN_OCTAL) {
+          }
+          break;
+
+        default:
+          /* double/single quoted string values */
+          if (vt_is_dquot (chr, def, scp_def) || vt_is_squot (chr, def, scp_def)) {
+            token = VT_TOKEN_STRING;
+            esc = 0;
+            quot = chr;
+            goto register_position;
+          /* floating point value */
+          } else if (chr == '.' && vt_scan_float (def, scp_def)) {
             dot = 1;
             token = VT_TOKEN_FLOAT;
-          } else {
-            goto error_non_digit_in_const;
-          }
-        /* hexadecimal value */
-        /* scientific notation in floating point value */
-        } else if (chr == 'e' || chr == 'E') {
-          nchr = vt_lexer_peek_chr (lxr, 1);
-          /* scientific notation in floating point value */
-          if (nchr == '-' || nchr == '+') {
-            if (token == VT_TOKEN_FLOAT)
-              chr = vt_lexer_get_chr (lxr);
-            else
-              goto error_non_digit_in_const;
-          } else if ((token != VT_TOKEN_HEX   && ! (def->scan_float)) ||
-                     (token != VT_TOKEN_HEX   &&
-                      token != VT_TOKEN_FLOAT &&
-                      token != VT_TOKEN_OCTAL &&
-                      token != VT_TOKEN_INT))
-          {
-            goto error_non_digit_in_const;
-          } else if (token != VT_TOKEN_HEX) {
-            token = VT_TOKEN_FLOAT;
-            loop = 0;
-          }
-        /* end of */
-        } else if (! isdigit (chr) && ! (isxdigit (chr) && token == VT_TOKEN_HEX)) {
-          loop = -1;
-        }
-        break;
-
-      default:
-        /* double/single quoted string values */
-        if (vt_is_dquot (chr, def, scp_def) || vt_is_squot (chr, def, scp_def)) {
-          token = VT_TOKEN_STRING;
-          esc = 0;
-          quot = chr;
-          goto register_position;
-        /* floating point value */
-        } else if (chr == '.' && vt_scan_float (def, scp_def)) {
-          dot = 1;
-          token = VT_TOKEN_FLOAT;
-          goto register_position;
-        /* hexadecimal value */
-        } else if (chr == '$' && vt_scan_hex_dollar (def, scp_def)) {
-          dot = 0;
-          token = VT_TOKEN_HEX;
-          goto register_position;
-        } else if (chr == '0') {
-          dot = 0;
-          nchr = vt_lexer_peek_chr (lxr, 1);
+            goto register_position;
           /* hexadecimal value */
-          if ((nchr == 'x' || nchr == 'X') && vt_scan_hex (def, scp_def)) {
+          } else if (chr == '$' && vt_scan_hex_dollar (def, scp_def)) {
+            dot = 0;
             token = VT_TOKEN_HEX;
-          /* binary value */
-          } else if ((nchr == 'b' || nchr == 'B') && vt_scan_binary (def, scp_def)) {
-            token = VT_TOKEN_BINARY;
-          /* octal value */
-          } else if (vt_scan_octal (def, scp_def)) {
-            token = VT_TOKEN_OCTAL;
+            goto register_position;
+          } else if (chr == '0') {
+            dot = 0;
+            nchr = vt_lexer_peek_chr (lxr, 1);
+            /* hexadecimal value */
+            if ((nchr == 'x' || nchr == 'X') && vt_scan_hex (def, scp_def)) {
+              loop = 2;
+              token = VT_TOKEN_HEX;
+            /* binary value */
+            } else if ((nchr == 'b' || nchr == 'B') && vt_scan_binary (def, scp_def)) {
+              loop = 2;
+              token = VT_TOKEN_BINARY;
+            /* octal value */
+            } else if (vt_scan_octal (def, scp_def)) {
+              token = VT_TOKEN_OCTAL;
+            /* integer value */
+            } else {
+              token = VT_TOKEN_INT;
+            }
+            goto register_position;
           /* integer value */
-          } else {
+          } else if (chr == '-' || chr == '+' || isdigit (chr)) {
+            dot = 0;
             token = VT_TOKEN_INT;
-          }
-          goto register_position;
-        /* integer value */
-        } else if (chr == '-' || chr == '+' || isdigit (chr)) {
-          dot = 0;
-          token = VT_TOKEN_INT;
-          goto register_position;
-        /* string value */
-        } else if (vt_is_str_first (chr, def, scp_def)) {
-          token = VT_TOKEN_STRING;
-          quot = '\0'; /* just to be safe */
-          goto register_position;
-        /* single line comment */
-        } else if (chr == '#') {
-          token = VT_TOKEN_COMMENT_SINGLE;
-          goto register_position;
-        } else if (chr == '/') {
-          nchr = vt_lexer_peek_chr (lxr, 1);
+            goto register_position;
+          /* string value */
+          } else if (vt_is_str_first (chr, def, scp_def)) {
+            token = VT_TOKEN_STRING;
+            quot = '\0'; /* just to be safe */
+            goto register_position;
           /* single line comment */
-          if (nchr == '/')
+          } else if (chr == '#') {
             token = VT_TOKEN_COMMENT_SINGLE;
-          /* multi line comment */
-          else if (nchr == '*')
-            token = VT_TOKEN_COMMENT_MULTI;
-          else
-            goto unrecognized_token;
-          goto register_position;
-        /* char value */
-        } else if (! vt_is_space (chr, def, scp_def)) {
+            goto register_position;
+          } else if (chr == '/') {
+            nchr = vt_lexer_peek_chr (lxr, 1);
+            /* single line comment */
+            if (nchr == '/')
+              token = VT_TOKEN_COMMENT_SINGLE;
+            /* multi line comment */
+            else if (nchr == '*')
+              token = VT_TOKEN_COMMENT_MULTI;
+            else
+              goto unrecognized_token;
+            goto register_position;
+          /* char value */
+          } else if (! vt_is_space (chr, def, scp_def)) {
 unrecognized_token:
-          token = VT_TOKEN_CHAR;
-          loop = 0;
+            token = VT_TOKEN_CHAR;
+            loop = 0;
 register_position:
-          pos = vt_lexer_get_pos (lxr);
-          line = lxr->line;
-          column = lxr->column;
-        }
-        break;
+            pos = vt_lexer_get_pos (lxr);
+            line = lxr->lines;
+            column = vt_lexer_get_cur_column (lxr);//->columns;
+          }
+          break;
+      }
+    } else if (loop > 1) {
+      loop--;
     }
   }
 
@@ -655,10 +664,13 @@ register_position:
     case VT_TOKEN_STRING:
       if (quot) {
         if (vt_is_dquot (quot, def, scp_def))
-          str = vt_lexer_unesc_str_dquot (lxr->str, len, quot, err);
+          str = vt_lexer_unesc_str_dquot (lxr->str + pos, len, quot, err);
         else
-          str = vt_lexer_unesc_str_squot (lxr->str, len, quot, err);
-        goto error;
+          str = vt_lexer_unesc_str_squot (lxr->str + pos, len, quot, err);
+        if (str)
+          break;
+        else
+          goto error;
       } else if (vt_scan_bool (def, scp_def)) {
         /* boolean value (true) */
         if (strncasecmp (lxr->str + pos, "true",  len) == 0 ||
@@ -712,7 +724,7 @@ register_position:
       if (token == VT_TOKEN_FLOAT)
         dbl = strtod (str, &ptr);
       else if (token == VT_TOKEN_BINARY)
-        lng = strtol (str, &ptr, 2);
+        lng = strtol (str+2, &ptr, 2);
       else if (token == VT_TOKEN_OCTAL)
         lng = strtol (str, &ptr, 8);
       else if (token == VT_TOKEN_INT)
@@ -729,7 +741,7 @@ error_float_malformed:
           vt_error ("error_float_malformed");
         } else {
 error_digit_radix:
-          vt_error ("error_digit_radix");
+          vt_error ("error_digit_radix: %c", *ptr);
         }
         goto error;
       }
@@ -740,10 +752,7 @@ error_digit_radix:
       if (vt_numbers_as_int (def, scp_def) && token != VT_TOKEN_FLOAT) {
         token = VT_TOKEN_INT;
       }
-vt_error ("HEREHERE");
-vt_error ("token: %d, %d", token, VT_TOKEN_INT);
-//vt_error ("int as float: %s", def->int_as_float ? "true" : "false");
-vt_error ("int as float: %s", vt_int_as_float (def, scp_def) ? "true" : "false");
+
       /* convert integer value to floating point value */
       if (vt_int_as_float (def, scp_def) && token == VT_TOKEN_INT) {
         dbl = lng;
