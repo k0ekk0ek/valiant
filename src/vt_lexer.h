@@ -136,7 +136,7 @@ struct _vt_lexer {
 
 //void vt_lexer_def_clr (vt_lexer_def_t *);
 void vt_lexer_def_reset (vt_lexer_def_t *);
-vt_token_t vt_lexer_get_next_token (vt_lexer_t *, vt_lexer_def_t *, vt_error_t *);
+vt_token_t vt_lexer_get_next_token (vt_lexer_t *, vt_lexer_def_t *, int *);
 
 //vt_lexer_t *vt_lexer_create (const char *, size_t, vt_error_t *err);
 //void vt_lexer_destroy (vt_lexer_t *lexer);

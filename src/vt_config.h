@@ -9,7 +9,7 @@
 #include <stdbool.h>
 
 /* valiant includes */
-#include "lexer.h"
+#include "vt_lexer.h"
 
 #define VT_CONFIG_NAME_MAX (32)
 #define VT_CONFIG_PATH_MAX (PATH_MAX)
@@ -132,21 +132,21 @@ vt_config_t *vt_config_parse_file (vt_config_def_t *, const char *,
 #define VT_CONFIG_FLOAT_LIST(name, def, flags) \
   { (name), VT_CONFIG_TYPE_FLOAT, ((flags) | VT_CONFIG_FLAG_LIST), \
     {.opt = {NULL, NULL, {VT_VALUE_TYPE_FLOAT, {.dbl = (def) }}}}}
-#define VT_CONFIG_STRING(name, def, flags) \
+#define VT_CONFIG_STR(name, def, flags) \
   { (name), VT_CONFIG_TYPE_STR, (flags), \
     {.opt = {"\"", "\'", {VT_VALUE_TYPE_STR, {.str = (def) }}}}}
-#define VT_CONFIG_STRING_LIST(name, def, flags) \
+#define VT_CONFIG_STR_LIST(name, def, flags) \
   { (name), VT_CONFIG_TYPE_STR, ((flags) | VT_CONFIG_FLAG_LIST), \
-    {.opt = {"\"", "\'", {VT_VALUE_TYPE_STR {.str = (dev) }}}}}
-#define VT_CONFIG_STRING_QUOT(name, dquot, squot, def, flags) \
+    {.opt = {"\"", "\'", {VT_VALUE_TYPE_STR {.str = (def) }}}}}
+#define VT_CONFIG_STR_QUOT(name, dquot, squot, def, flags) \
   { (name), VT_CONFIG_TYPE_STR, (flags), \
-    {.opt = {(dquot), (squot), {VT_VALUE_TYPE_STR, {.str = (dev) }}}}}
+    {.opt = {(dquot), (squot), {VT_VALUE_TYPE_STR, {.str = (def) }}}}}
 #define VT_CONFIG_STR_DQUOT(name, dquot, def, flags) \
   { (name), VT_CONFIG_TYPE_STR, (flags), \
-    {.opt = {(dquot), "\'", {VT_VALUE_TYPE_STR, {.str = (dev) }}}}}
+    {.opt = {(dquot), "\'", {VT_VALUE_TYPE_STR, {.str = (def) }}}}}
 #define VT_CONFIG_STR_SQUOT(name, squot, def, flags) \
   { (name), VT_CONFIG_TYPE_STR, (flags), \
-    {.opt = {"\"", (squot), {VT_VALUE_TYPE_STR, {.str = (dev) }}}}}
+    {.opt = {"\"", (squot), {VT_VALUE_TYPE_STR, {.str = (def) }}}}}
 #define VT_CONFIG_SEC(name, opts, flags) \
   { (name), VT_CONFIG_TYPE_SEC, (flags), \
     {.sec = {VT_CHRS_STR, (opts) }}}
@@ -155,12 +155,12 @@ vt_config_t *vt_config_parse_file (vt_config_def_t *, const char *,
     {.sec = {(chrs), (opts) }}}
 #define VT_CONFIG_END() \
   { NULL, VT_CONFIG_TYPE_NONE, 0, \
-    {.opt = {NULL, NULL, NULL, {VT_VALUE_TYPE_INT, {.lng = 0 }}}}}
+    {.opt = {NULL, NULL, {VT_VALUE_TYPE_INT, {.lng = 0 }}}}}
 
 char *vt_config_getname (vt_config_t *);
 
 vt_value_t *vt_config_getnval (vt_config_t *, unsigned int, int *);
-unsigned int vt_config_getnvals (vt_config_t *, int *);
+unsigned int vt_config_getnvals (vt_config_t *);
 
 long vt_config_getnint (vt_config_t *, unsigned int, int *);
 #define vt_config_getint(cfg) (vt_config_getnint ((cfg), 0))
@@ -179,7 +179,7 @@ char *vt_config_getnstr (vt_config_t *, unsigned int, int *);
 char *vt_config_sec_gettitle (vt_config_t *);
 vt_config_t *vt_config_sec_getnopt (vt_config_t *, const char *, unsigned int,
   int *);
-unsigned int vt_config_sec_getnopts (vt_config_t *, int *);
+unsigned int vt_config_sec_getnopts (vt_config_t *);
 
 /* specify NULL instead of name in vt_config_get(n)sec(s) functions to operate
    on sections based soley on index */
@@ -208,6 +208,6 @@ bool vt_config_sec_getnbool (vt_config_t *, const char *, unsigned int,
 char *vt_config_sec_getnstr (vt_config_t *, const char *, unsigned int,
   int *);
 #define vt_config_sec_getstr(cfg, opt, err) \
-  (vt_config_sec_getnstr ((cfg), (opt), 0, (err))
+  (vt_config_sec_getnstr ((cfg), (opt), 0, (err)))
 
 #endif

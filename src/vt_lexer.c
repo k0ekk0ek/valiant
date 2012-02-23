@@ -44,7 +44,7 @@ vt_lexer_value_clr (vt_lexer_t *lxr)
 {
   assert (lxr);
 
-  if (lxr->value.type == VT_VALUE_TYPE_STRING &&
+  if (lxr->value.type == VT_VALUE_TYPE_STR &&
       lxr->value.data.str)
     free (lxr->value.data.str);
 
@@ -136,13 +136,13 @@ vt_lexer_set_token_string (vt_lexer_t *lxr,
                            char *str)
 {
   assert (lxr);
-  lxr->value.type = VT_VALUE_TYPE_STRING;
+  lxr->value.type = VT_VALUE_TYPE_STR;
   lxr->value.data.str = str;
   return vt_lexer_set_token (lxr, token, line, column);
 }
 
 char *
-vt_lexer_unesc_str_dquot (const char *str, size_t len, int dquot, vt_error_t *err)
+vt_lexer_unesc_str_dquot (const char *str, size_t len, int dquot, int *err)
 {
   int esc, quot;
   int first, i, j;
@@ -176,7 +176,7 @@ vt_lexer_unesc_str_dquot (const char *str, size_t len, int dquot, vt_error_t *er
   }
 
   if (! (nstr = calloc (len, sizeof (char)))) {
-    vt_set_error (err, VT_ERR_NOMEM);
+    vt_set_errno (err, errno);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     return NULL;
   }
@@ -217,7 +217,7 @@ vt_lexer_unesc_str_dquot (const char *str, size_t len, int dquot, vt_error_t *er
 }
 
 char *
-vt_lexer_unesc_str_squot (const char *str, size_t len, int squot, vt_error_t *err)
+vt_lexer_unesc_str_squot (const char *str, size_t len, int squot, int *err)
 {
   int esc, quot;
   int first, i, j;
@@ -253,7 +253,7 @@ vt_lexer_unesc_str_squot (const char *str, size_t len, int squot, vt_error_t *er
   }
 
   if (! (nstr = calloc (len, sizeof (char)))) {
-    vt_set_error (err, VT_ERR_NOMEM);
+    vt_set_errno (err, errno);
     vt_error ("%s: calloc: %s", __func__, strerror (errno));
     return NULL;
   }
@@ -423,11 +423,11 @@ vt_lexer_def_is_true (int bln, int def_bln, int scp_def_bln)
     return (scp_def_bln) ? 1 : 0;
   if (def_bln != -1)
     return (def_bln) ? 1 : 0;
-  return glbl_bln;
+  return bln;
 }
 
 #define __vt_lexer_def_is_true(bln, def, scp_def, mbr) \
-  (vt_lexer_def_mbr_is_true ((bln), ((def) ? ((def)->mbr ? 1 : 0) : -1), \
+  (vt_lexer_def_is_true ((bln), ((def) ? ((def)->mbr ? 1 : 0) : -1), \
     ((scp_def) ? ((scp_def)->mbr ? 1 : 0) : -1)))
 
 #define vt_skip_comment_single(def, scp_def) \
@@ -469,7 +469,7 @@ vt_lexer_get_next_token (vt_lexer_t *lxr, vt_lexer_def_t *scp_def, int *err)
   int loop;
   long lng;
   size_t column, line;
-  vt_error_t tmperr;
+  int tmperr;
   vt_lexer_def_t *def;
   vt_token_t token;
 
@@ -498,7 +498,7 @@ vt_lexer_get_next_token (vt_lexer_t *lxr, vt_lexer_def_t *scp_def, int *err)
               loop = 0;
           }
           break;
-        case VT_TOKEN_STRING:
+        case VT_TOKEN_STR:
           if (quot) {
             if (esc)
               esc = 0;
@@ -556,7 +556,7 @@ vt_lexer_get_next_token (vt_lexer_t *lxr, vt_lexer_def_t *scp_def, int *err)
         default:
           /* double/single quoted string values */
           if (vt_is_dquot (chr, def, scp_def) || vt_is_squot (chr, def, scp_def)) {
-            token = VT_TOKEN_STRING;
+            token = VT_TOKEN_STR;
             esc = 0;
             quot = chr;
             goto register_position;
@@ -596,7 +596,7 @@ vt_lexer_get_next_token (vt_lexer_t *lxr, vt_lexer_def_t *scp_def, int *err)
             goto register_position;
           /* string value */
           } else if (vt_is_str_first (chr, def, scp_def)) {
-            token = VT_TOKEN_STRING;
+            token = VT_TOKEN_STR;
             quot = '\0'; /* just to be safe */
             goto register_position;
           /* single line comment */
@@ -636,9 +636,9 @@ register_position:
 
   /* special cases apply to end of file in certain situations */
   if (chr == '\0' && (token == VT_TOKEN_COMMENT_MULTI ||
-                     (token == VT_TOKEN_STRING && quot != '\0')))
+                     (token == VT_TOKEN_STR && quot != '\0')))
   {
-    vt_set_error (err, VT_ERR_INVAL);
+    vt_set_errno (err, EINVAL);
     vt_error ("unexpected eof");
     goto error;
   }
@@ -647,7 +647,7 @@ register_position:
 
   /* duplicate string if required */
   switch (token) {
-    case VT_TOKEN_STRING:
+    case VT_TOKEN_STR:
       if (quot) {
         if (vt_is_dquot (quot, def, scp_def))
           str = vt_lexer_unesc_str_dquot (lxr->str + pos, len, quot, err);
@@ -680,7 +680,7 @@ register_position:
     case VT_TOKEN_HEX:
     case VT_TOKEN_FLOAT:
       if (! (str = strndup (lxr->str + pos, len))) {
-        vt_set_error (err, VT_ERR_NOMEM);
+        vt_set_errno (err, ENOMEM);
         vt_error ("%s: calloc: %s", __func__, strerror (errno));
         goto error;
       }
@@ -690,11 +690,11 @@ register_position:
   switch (token) {
     case VT_TOKEN_COMMENT_SINGLE:
     case VT_TOKEN_COMMENT_MULTI:
-    case VT_TOKEN_STRING:
+    case VT_TOKEN_STR:
       vt_lexer_set_token_string (lxr, token, line, column, str);
       break;
     case VT_TOKEN_BOOL:
-      vt_lexer_set_token_bool (lxr, token, line, column, bln);
+      /* token value set previously */
       break;
     case VT_TOKEN_CHAR:
       if (vt_char_as_token (def, scp_def))
