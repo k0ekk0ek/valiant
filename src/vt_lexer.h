@@ -11,6 +11,7 @@
 
 /* valiant includes */
 #include "vt_error.h"
+#include "vt_value.h"
 
 #define VT_CHRS_AZ_LC "abcdefghijklmnopqrstuvwxyz"
 #define VT_CHRS_AZ_UC "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -62,33 +63,6 @@ enum _vt_token {
   VT_TOKEN_COMMENT_SINGLE,
   VT_TOKEN_COMMENT_MULTI,
   VT_TOKEN_LAST
-};
-
-typedef enum _vt_value_type vt_value_type_t;
-
-enum _vt_value_type {
-  VT_VALUE_TYPE_BOOL,
-  VT_VALUE_TYPE_CHAR,
-  VT_VALUE_TYPE_INT,
-  VT_VALUE_TYPE_FLOAT,
-  VT_VALUE_TYPE_STR
-};
-
-typedef union _vt_value_mbr vt_value_mbr_t;
-
-union _vt_value_mbr {
-  bool bln;
-  int chr;
-  unsigned long lng;
-  double dbl;
-  char *str;
-};
-
-typedef struct _vt_value vt_value_t;
-
-struct _vt_value {
-  vt_value_type_t type;
-  vt_value_mbr_t data;
 };
 
 typedef struct _vt_lexer_def vt_lexer_def_t;
