@@ -13,47 +13,39 @@
 int vt_lexer_def_in_class (int, const char *, const char *, const char *);
 int vt_lexer_def_is_true (int, int, int);
 
+vt_token_t vt_lexer_get_token (vt_lexer_t *);
+vt_token_t vt_lexer_set_token (vt_lexer_t *, vt_token_t, size_t, size_t);
+vt_token_t vt_lexer_set_token_bool (vt_lexer_t *, vt_token_t, size_t, size_t,
+  bool);
+vt_token_t vt_lexer_set_token_char (vt_lexer_t *, vt_token_t, size_t, size_t,
+  char);
+vt_token_t vt_lexer_set_token_int (vt_lexer_t *, vt_token_t, size_t, size_t,
+  long);
+vt_token_t vt_lexer_set_token_float (vt_lexer_t *, vt_token_t, size_t, size_t,
+  double);
+vt_token_t vt_lexer_set_token_string (vt_lexer_t *, vt_token_t, size_t, size_t,
+  char *);
+vt_token_t vt_lexer_unset_token (vt_lexer_t *);
+
 void
-vt_lexer_def_reset (vt_lexer_def_t *def)
+vt_lexer_init (vt_lexer_t *lxr, const char *str, size_t len)
 {
-  assert (def);
+  assert (lxr);
+  assert (str);
 
-  def->space = VT_CHRS_SPACE;
-  def->str_first = VT_CHRS_STR_FIRST;
-  def->str = VT_CHRS_STR;
-  def->dquot = VT_CHRS_DQUOT;
-  def->squot = VT_CHRS_SQUOT;
-
-  def->skip_comment_multi = VT_SKIP_COMMENT_MULTI;
-  def->skip_comment_single = VT_SKIP_COMMENT_SINGLE;
-  def->scan_bool = VT_SCAN_BOOL;
-  def->scan_binary = VT_SCAN_BINARY;
-  def->scan_octal = VT_SCAN_OCTAL;
-  def->scan_float = VT_SCAN_FLOAT;
-  def->scan_hex = VT_SCAN_HEX;
-  def->scan_hex_dollar = VT_SCAN_HEX_DOLLAR;
-  def->scan_str_dquot = VT_SCAN_STR_DQUOT;
-  def->scan_str_squot = VT_SCAN_STR_SQUOT;
-  def->numbers_as_int = VT_NUMBERS_AS_INT;
-  def->int_as_float = VT_INT_AS_FLOAT;
-  def->char_as_token = VT_CHAR_AS_TOKEN;
+  memset (lxr, 0, sizeof (vt_lexer_t));
+  lxr->str = (char *)str;
+  lxr->len = len;
+  lxr->lines = 1;
+  lxr->columns = 1;
 }
 
-vt_token_t
-vt_lexer_value_clr (vt_lexer_t *lxr)
+void
+vt_lexer_deinit (vt_lexer_t *lxr)
 {
   assert (lxr);
 
-  if (lxr->value.type == VT_VALUE_TYPE_STR &&
-      lxr->value.data.str)
-    free (lxr->value.data.str);
-
-  lxr->token = VT_TOKEN_NONE;
-  lxr->line = lxr->lines;
-  lxr->column = lxr->columns;
-  lxr->value.type = VT_VALUE_TYPE_CHAR;
-  lxr->value.data.chr = '\0';
-  return lxr->token;
+  (void)vt_lexer_unset_token (lxr);
 }
 
 vt_token_t
@@ -139,6 +131,23 @@ vt_lexer_set_token_string (vt_lexer_t *lxr,
   lxr->value.type = VT_VALUE_TYPE_STR;
   lxr->value.data.str = str;
   return vt_lexer_set_token (lxr, token, line, column);
+}
+
+vt_token_t
+vt_lexer_unset_token (vt_lexer_t *lxr)
+{
+  assert (lxr);
+
+  if (lxr->value.type == VT_VALUE_TYPE_STR &&
+      lxr->value.data.str)
+    free (lxr->value.data.str);
+
+  lxr->token = VT_TOKEN_NONE;
+  lxr->line = lxr->lines;
+  lxr->column = lxr->columns;
+  lxr->value.type = VT_VALUE_TYPE_CHAR;
+  lxr->value.data.chr = '\0';
+  return lxr->token;
 }
 
 char *
@@ -474,7 +483,7 @@ vt_lexer_get_next_token (vt_lexer_t *lxr, vt_lexer_def_t *scp_def, int *err)
   vt_token_t token;
 
   assert (lxr);
-  vt_lexer_value_clr (lxr);
+  vt_lexer_unset_token (lxr);
 
   def = lxr->def;
   token = VT_TOKEN_NONE;
@@ -635,12 +644,18 @@ register_position:
     /* do nothing */ ;
 
   /* special cases apply to end of file in certain situations */
-  if (chr == '\0' && (token == VT_TOKEN_COMMENT_MULTI ||
-                     (token == VT_TOKEN_STR && quot != '\0')))
-  {
-    vt_set_errno (err, EINVAL);
-    vt_error ("unexpected eof");
-    goto error;
+  if (chr == '\0') {
+    if ((token == VT_TOKEN_COMMENT_MULTI) ||
+        (token == VT_TOKEN_STR && quot != '\0'))
+    {
+      vt_set_errno (err, EINVAL);
+      vt_error ("unexpected end of file");
+      goto error;
+    }
+    if ((token == VT_TOKEN_NONE))
+    {
+      token = VT_TOKEN_EOF;
+    }
   }
 
   len = lxr->pos - pos;

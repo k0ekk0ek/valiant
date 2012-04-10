@@ -2,6 +2,7 @@
 #define VT_VALUE_H_INCLUDED
 
 /* system includes */
+#include <stdbool.h>
 #include <stdarg.h>
 
 typedef enum _vt_value_type vt_value_type_t;
@@ -30,7 +31,8 @@ struct _vt_value {
 
 vt_value_t *vt_value_create (vt_value_type_t, ...);
 void vt_value_destroy (vt_value_t *);
-vt_value_t *vt_value_copy (vt_value_t *);
+int vt_value_cmp (vt_value_t *, vt_value_t *, int *);
+vt_value_t *vt_value_dup (vt_value_t *);
 
 #endif
 

@@ -97,28 +97,26 @@ vt_value_dup (vt_value_t *src)
   vt_value_t *dest;
 
   assert (src);
-  if (src->type == VT_VALUE_TYPE_STR)
-    assert (src->data.str);
 
   if (! (dest = calloc (1, sizeof (vt_value_t))))
     goto error;
 
   switch (src->type) {
-    case VT_CONFIG_TYPE_BOOL:
+    case VT_VALUE_TYPE_BOOL:
       dest->type = VT_VALUE_TYPE_BOOL;
       dest->data.bln = src->data.bln;
       break;
-    case VT_CONFIG_TYPE_INT:
+    case VT_VALUE_TYPE_INT:
       dest->type = VT_VALUE_TYPE_INT;
       dest->data.lng = src->data.lng;
       break;
-    case VT_CONFIG_TYPE_FLOAT:
+    case VT_VALUE_TYPE_FLOAT:
       dest->type = VT_VALUE_TYPE_FLOAT;
       dest->data.dbl = src->data.dbl;
       break;
-    case VT_CONFIG_TYPE_STR:
+    case VT_VALUE_TYPE_STR:
       dest->type = VT_VALUE_TYPE_STR;
-      if (! (dest->data.str = strdup (dest->data.str)))
+      if (src->data.str && ! (dest->data.str = strdup (src->data.str)))
         goto error;
       break;
   }

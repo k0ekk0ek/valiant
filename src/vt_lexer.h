@@ -108,13 +108,8 @@ struct _vt_lexer {
   vt_value_t value;
 };
 
-//void vt_lexer_def_clr (vt_lexer_def_t *);
-void vt_lexer_def_reset (vt_lexer_def_t *);
+void vt_lexer_init (vt_lexer_t *, const char *, size_t);
+void vt_lexer_deinit (vt_lexer_t *);
 vt_token_t vt_lexer_get_next_token (vt_lexer_t *, vt_lexer_def_t *, int *);
-
-//vt_lexer_t *vt_lexer_create (const char *, size_t, vt_error_t *err);
-//void vt_lexer_destroy (vt_lexer_t *lexer);
-//vt_lexer_token_t vt_lexer_get_token (vt_lexer_t *lexer, vt_lexer_opts_t *, vt_error_t *err);
-//char *vt_lexer_gets (vt_lexer_t *lexer);
 
 #endif
