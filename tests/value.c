@@ -6,12 +6,6 @@
 static value_t val = { 0 };
 
 static int
-value_suite_init (void)
-{
-  return 0;
-}
-
-static int
 value_suite_deinit (void)
 {
   value_clear (&val);
@@ -54,12 +48,6 @@ value_is_type (value_t *val, value_type_t type)
 static void
 value_test_null (void)
 {
-  bool bln;
-  double dbl;
-  long lng;
-  ucs4_t chr;
-  uint8_t *str = NULL;
-
   value_clear (&val);
   CU_ASSERT (value_is_type (&val, VALUE_NULL) == CU_TRUE);
 }
@@ -112,7 +100,8 @@ value_test_str (void)
 
   CU_ASSERT (value_set_str (&val, str, 0) == 0);
   CU_ASSERT (value_is_type (&val, VALUE_STR) == CU_TRUE);
-  CU_ASSERT (value_get_str (&ptr, &val) == 0 && ptr && strcmp (ptr, str) == 0);
+  CU_ASSERT (value_get_str (&ptr, &val) == 0);
+  CU_ASSERT (ptr != NULL && strcmp ((char *)ptr, (char *)str) == 0);
 
   if (ptr != NULL) {
     free (ptr);
@@ -127,18 +116,18 @@ main (int argc, char *argv[])
   if (CUE_SUCCESS != CU_initialize_registry())
      return CU_get_error();
 
-  suite = CU_add_suite("value", &value_suite_init, &value_suite_deinit);
+  suite = CU_add_suite("value", NULL, &value_suite_deinit);
   if (NULL == suite) {
      CU_cleanup_registry();
      return CU_get_error();
   }
 
-  if (!CU_add_test(suite, "test of empty value", &value_test_null) ||
-      !CU_add_test(suite, "test of boolean value", &value_test_bool) ||
-      !CU_add_test(suite, "test of char value", &value_test_char) ||
-      !CU_add_test(suite, "test of long value", &value_test_long) ||
-      !CU_add_test(suite, "test of double value", &value_test_double) ||
-      !CU_add_test(suite, "test of string value", &value_test_str))
+  if (!CU_add_test(suite, "empty value", &value_test_null) ||
+      !CU_add_test(suite, "boolean value", &value_test_bool) ||
+      !CU_add_test(suite, "char value", &value_test_char) ||
+      !CU_add_test(suite, "long value", &value_test_long) ||
+      !CU_add_test(suite, "double value", &value_test_double) ||
+      !CU_add_test(suite, "string value", &value_test_str))
   {
      CU_cleanup_registry();
      return CU_get_error();

@@ -1,8 +1,12 @@
 #include <assert.h>
+#include <errno.h>
 #include <limits.h>
 #include <locale.h>
+#include <pthread.h>
 #include <stdint.h>
+#define __USE_GNU
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <xlocale.h>
 #include <unictype.h>
@@ -18,7 +22,7 @@ static pthread_once_t posix_locale_once = PTHREAD_ONCE_INIT;
    by locale. copied almost directly from GLib under the LGPL license. */
 static const unsigned int ascii_table_data[256] = {
   0x004, 0x004, 0x004, 0x004, 0x004, 0x004, 0x004, 0x004,
-  0x004, 0x104, 0x104, 0x004, 0x104, 0x104, 0x004, 0x004,
+  0x004, 0x104, 0x104, 0x104, 0x104, 0x104, 0x004, 0x004,
   0x004, 0x004, 0x004, 0x004, 0x004, 0x004, 0x004, 0x004,
   0x004, 0x004, 0x004, 0x004, 0x004, 0x004, 0x004, 0x004,
   0x140, 0x0d0, 0x0d0, 0x0d0, 0x0d0, 0x0d0, 0x0d0, 0x0d0,
@@ -38,9 +42,9 @@ static const unsigned int ascii_table_data[256] = {
 
 const unsigned int * const ascii_table = ascii_table_data;
 
-#define ASCII_TOUPPER(chr) \
+#define TOUPPER(chr) \
   ((chr) >= 'a' && (chr) <= 'z' ? (chr) + ('A' - 'a') : (chr))
-#define ASCII_TOLOWER(chr) \
+#define TOLOWER(chr) \
   ((chr) >= 'A' && (chr) <= 'Z' ? (chr) - ('A' - 'a') : (chr))
 
 static void set_posix_locale (void);
@@ -67,7 +71,7 @@ get_posix_locale (void)
 }
 
 int
-strcasecmp_c (const char *s1, const char *s2)
+strcasecmp_c (const uint8_t *s1, const uint8_t *s2)
 {
   char *p1, *p2;
   int c1, c2;
@@ -76,17 +80,17 @@ strcasecmp_c (const char *s1, const char *s2)
   assert (s2 != NULL);
 
   for (p1 = (char *)s1, p2 = (char *)s2; *p1 && *p2; p1++, p2++) {
-    c1 = (int)(unsigned char) ASCII_TOLOWER (*s1);
-    c2 = (int)(unsigned char) ASCII_TOLOWER (*s2);
+    c1 = (int)(uint8_t) TOLOWER (*s1);
+    c2 = (int)(uint8_t) TOLOWER (*s2);
     if (c1 != c2)
       return (c1 - c2);
   }
 
-  return (((int)(unsigned char) *s1) - ((int)(unsigned char) *s2));
+  return (((int)(uint8_t) *p1) - ((int)(uint8_t) *p2));
 }
 
 int
-strncasecmp_c (const char *s1, const char *s2, size_t n)
+strncasecmp_c (const uint8_t *s1, const uint8_t *s2, size_t n)
 {
   char *p1, *p2;
   int c1, c2;
@@ -95,14 +99,14 @@ strncasecmp_c (const char *s1, const char *s2, size_t n)
   assert (s2 != NULL);
 
   for (p1 = (char *)s1, p2 = (char *)s2; *p1 && *p2 && n; p1++, p2++, n--) {
-      c1 = (int)(unsigned char) ASCII_TOLOWER (*s1);
-      c2 = (int)(unsigned char) ASCII_TOLOWER (*s2);
+      c1 = (int)(uint8_t) TOLOWER (*s1);
+      c2 = (int)(uint8_t) TOLOWER (*s2);
       if (c1 != c2)
         return (c1 - c2);
   }
 
   if (n) {
-    return (((int)(unsigned char) *s1) - ((int)(unsigned char) *s2));
+    return (((int)(uint8_t) *p1) - ((int)(uint8_t) *p2));
   } else {
     return 0;
   }
@@ -129,30 +133,30 @@ todigit_c (int chr)
 int
 toupper_c (int chr)
 {
-  return ASCII_TOUPPER (chr);
+  return TOUPPER (chr);
 }
 
 int
 tolower_c (int chr)
 {
-  return ASCII_TOLOWER (chr);
+  return TOLOWER (chr);
 }
 
 int
-strtol_c (long *ptr, const char *str, char **end, int base)
+strtol_c (long *ptr, const uint8_t *str, uint8_t **end, int base)
 {
   int err = 0;
   locale_t loc = NULL;
   long lng;
 
-  assert (tot != NULL);
+  assert (ptr != NULL);
   assert (str != NULL);
   assert (base >= 0);
 
   loc = get_posix_locale ();
   err = errno;
   errno = 0;
-  lng = strtol_l (str, end, base, loc);
+  lng = strtol_l ((const char *)str, (char **)end, base, loc);
   if (errno != 0) {
     if (lng != 0) {
       *ptr = lng;
@@ -167,20 +171,19 @@ strtol_c (long *ptr, const char *str, char **end, int base)
 }
 
 int
-strtod_c (double *ptr, const char *str, char **ptr, int base)
+strtod_c (double *ptr, const uint8_t *str, uint8_t **end)
 {
   int err = 0;
   locale_t loc = NULL;
   double dbl;
 
-  assert (tot != NULL);
+  assert (ptr != NULL);
   assert (str != NULL);
-  assert (base >= 0);
 
   loc = get_posix_locale ();
   err = errno;
   errno = 0;
-  dbl = strtod_l (str, end, base, loc);
+  dbl = strtod_l ((const char *)str, (char **)end, loc);
   if (errno != 0) {
     if (dbl != 0) {
       *ptr = dbl;
@@ -194,58 +197,28 @@ strtod_c (double *ptr, const char *str, char **ptr, int base)
   return err;
 }
 
-int
-u8_strnact (const uint8_t *str, size_t len, u8_striter_t func, void *data)
-{
-  int again = 1;
-  int err = 0;
-  size_t pos = 0;
-  ucs4_t chr = '\0';
-
-  assert (str != NULL);
-  assert (func != NULL);
-
-  for (pos = 0; err == 0 && again == 1 && pos < len; ) {
-    ret = u8_mbtouc (&chr, str+pos, (len-pos));
-    if (ret < 0 || ret > (len - pos)) {
-      err = EINVAL;
-    } else {
-      err = func (chr, ret, data);
-      switch (err) {
-        case -1;
-          again = 0;
-          err = 0;
-        case 0: /* fall through */
-          pos += (size_t)ret;
-        default: /* fall through */
-          break;
-      }
-    }
-  }
-
-  return err;
-}
-
-
-
-
 #ifndef NDEBUG
 static int
 string_is_sane (string_t *str)
 {
-  int ret = 0;
-  ucs4_t chr = '\0';
+  int err = EINVAL;
 
   if (str != NULL) {
-    if (str->buf != NULL && str->cnt >= str->pos) {
-      len = str->cnt - str->pos;
-      if (len == 0 || u8_mbtouc (&chr, (uint8_t *)(str->buf + str->pos), len)) {
-        ret = 1;
-      }
+    if (str->buf == NULL &&
+        str->len == 0 &&
+        str->cnt == 0)
+    {
+      err = 0;
+    } else if ((str->cnt >= str->pos) &&
+               (str->cnt <= str->len) &&
+               (str->len <= str->lim || str->lim == 0) &&
+               (u8_check (str->buf, str->cnt) == NULL))
+    {
+      err = 0;
     }
   }
 
-  return ret;
+  return err;
 }
 #endif
 
@@ -269,7 +242,7 @@ string_construct (string_t *str, const uint8_t *chrs, size_t len)
 }
 
 int
-string_create (string_t **a_str, const uint8_t *chrs, size_t len),
+string_create (string_t **a_str, const uint8_t *chrs, size_t len)
 {
   int err = 0;
   string_t *str;
@@ -282,6 +255,8 @@ string_create (string_t **a_str, const uint8_t *chrs, size_t len),
     err = errno;
   } else if ((err = string_construct (str, chrs, len)) != 0) {
     string_destroy (str);
+  } else {
+    *a_str = str;
   }
 
   return err;
@@ -290,52 +265,60 @@ string_create (string_t **a_str, const uint8_t *chrs, size_t len),
 void
 string_destruct (string_t *str)
 {
-  assert (string_is_sane (str));
-
-  string_empty (str);
-  (void)memset (str, 0, sizeof (string_t));
+  assert (string_is_sane (str) == 0);
+  string_clear (str);
 }
 
 void
 string_destroy (string_t *str)
 {
   if (str != NULL) {
-    assert (string_is_sane (str));
+    assert (string_is_sane (str) == 0);
     string_destruct (str);
     free (str);
   }
 }
 
 void
-string_get_buffer (uint8_t **chrs, string_t *str)
+string_clear (string_t *str)
 {
-  assert (chrs != NULL);
-  assert (string_is_sane (str));
+  assert (string_is_sane (str) == 0);
 
   if (str->buf != NULL) {
-    *chrs = str->buf + str->pos;
-  } else {
-    *chrs = NULL;
+    free (str->buf);
   }
+
+  memset (str, 0, sizeof (string_t));
 }
 
-void
-string_get_length (size_t *len, string_t *str)
+uint8_t *
+string_get_buffer (string_t *str)
 {
-  assert (string_is_sane (str));
+  uint8_t *ptr;
 
-  if (str->buf != NULL
+  assert (string_is_sane (str) == 0);
 
-  *len = str->cnt - str->pos;
+  if (str->buf != NULL) {
+    ptr = str->buf + str->pos;
+  } else {
+    ptr = NULL;
+  }
+
+  return ptr;
 }
 
-void
-string_get_limit (size_t *lim, string_t *str)
+size_t
+string_get_length (string_t *str)
 {
-  assert (lim != NULL);
-  assert (string_is_sane (str));
+  assert (string_is_sane (str) == 0);
+  return str->cnt - str->pos;
+}
 
-  *lim = str->lim;
+size_t
+string_get_limit (string_t *str)
+{
+  assert (string_is_sane (str) == 0);
+  return str->lim;
 }
 
 int
@@ -343,7 +326,7 @@ string_set_limit (string_t *str, size_t lim)
 {
   int err = 0;
 
-  assert (string_is_sane (str));
+  assert (string_is_sane (str) == 0);
 
   if (lim < SIZE_MAX) {
     str->lim = lim;
@@ -354,77 +337,40 @@ string_set_limit (string_t *str, size_t lim)
   return err;
 }
 
-void
-string_get_size (size_t *len, string_t *str)
+size_t
+string_get_size (string_t *str)
 {
-  assert (len != NULL);
-  assert (string_is_sane (str));
-
-  // FIXME: implement
-}
-
-
-
-
-
-
-
-void
-string_empty (string_t *str)
-{
-  assert (string_is_sane (str));
-
-  if (str->buf != NULL) {
-    free (str->buf);
-  }
-  str->buf = NULL;
-  str->len = 0;
-  str->cnt = 0;
-  str->pos = 0;
+  assert (string_is_sane (str) == 0);
+  return str->len;
 }
 
 int
-string_expand (string_t *str, size_t len)
+string_set_size (string_t *str, size_t len)
 {
   int err = 0;
-  char *buf;
-  size_t lim, tot;
+  uint8_t *buf;
+  size_t lim;
 
-  // FIXME: include null terminating byte!
+  assert (string_is_sane (str) == 0);
 
-  assert (string_is_sane (str));
-
-  if (str->lim > 0) {
-    if (str->term != 0 && str->lim == SIZE_MAX) {
-      lim = str->lim - 1;
-    } else {
-      lim = str->lim;
-    }
+  if (str->lim > 0 && str->lim < SIZE_MAX) {
+    lim = str->lim;
   } else {
-    if (str->term != 0) {
-      lim = SIZE_MAX - 1;
-    } else {
-      lim = SIZE_MAX;
-    }
+    /* extra byte for null termination */
+    lim = SIZE_MAX - 1;
   }
 
-  if (len >= lim) {
+  if (len > lim) {
     err = ERANGE;
   } else {
-    if (str->term == 0) {
-      tot = len;
-    } else {
-      tot = len + 1; /* extra byte for null termination */
-    }
-
-    /* only allocate memory if necessary */
+    /* allocate memory only if necessary */
     if (len > str->len) {
-      if ((buf = realloc (str->buf, tot)) == NULL) {
+      if ((buf = realloc (str->buf, len + 1)) == NULL) {
         err = errno;
       } else {
-        str->buf = chrs;
+        str->buf = buf;
         str->len = len;
-        /* don't update counter */
+        /* do not update counter */
       }
     }
   }
@@ -432,81 +378,51 @@ string_expand (string_t *str, size_t len)
   return err;
 }
 
-/*int
-string_is_terminated (string_t *str)
+size_t
+string_get_state (string_t *str)
 {
-  assert (string_is_sane (str));
-
-  return str->term == 0 ? 0 : 1;
+  assert (string_is_sane (str) == 0);
+  return str->pos;
 }
 
 int
-string_terminate (string_t *str, string_terminate_t term)
+string_set_state (string_t *str, size_t off)
 {
   int err = 0;
-  size_t len;
-  uint8_t *buf;
+  int ret;
+  ucs4_t chr;
 
-  assert (string_is_sane (str));
-  assert (term == STRING_TERMINATE_NEVER ||
-          term == STRING_TERMINATE_ONCE  ||
-          term == STRING_TERMINATE_ALWAYS);
+  assert (string_is_sane (str) == 0);
 
-  switch (term) {
-    case STRING_TERMINATE_NEVER:
-      str->term = 0;
-      break;
-    case STRING_TERMINATE_ALWAYS:
-      str->term = 1;
-      /* fall through *
-    default:
-      if (string_is_empty (str) != 0) {
-        /* can't use string_expand because it won't grow past limit *
-        if (str->cnt == str->len) {
-          if (str->len >= (SIZE_MAX - 1)) {
-            err = ERANGE;
-          } else {
-            if ((buf = realloc (str->buf, str->len + 1)) == NULL) {
-              err = errno;
-            } else {
-              str->buf = buf;
-              str->buf[str->cnt] = '\0';
-            }
-          }
-        } else {
-          str->buf[str->cnt] = '\0';
-        }
-      }
-      break;
+  if (off <= str->cnt) {
+    ret = u8_mbtouc (&chr, str->buf + off, (str->cnt - off));
+    if (ret == -1) {
+      err = EINVAL;
+    } else {
+      str->pos = off;
+    }
+  } else {
+    err = ERANGE;
   }
 
   return err;
-}*/
-
-
+}
 
 int
 string_copy (string_t *str, const uint8_t *chrs, size_t len)
 {
   int err = 0;
 
-  assert (string_is_sane (str));
-  assert ((chrs != NULL && len != 0) ||
-          (chrs == NULL && len == 0));
+  assert (string_is_sane (str) == 0);
+  assert (chrs != NULL && len != 0 && u8_check (chrs, len) == NULL);
 
-  if (str->lim != 0 && str->lim < len) {
-    err = ERANGE;
-  } else {
-    if (chrs != NULL) {
-      err = string_expand (str, len);
-      if (err == 0) {
-        (void)memmove (str->buf, chrs, len);
-        str->cnt = len;
-        STRING_TERMINATE (str);
-      }
-    } else {
-      string_empty (str);
+  if (str->lim == 0 || str->lim <= len) {
+    if ((err = string_set_size (str, len)) == 0) {
+      (void)memmove (str->buf, chrs, len);
+      str->cnt = len;
     }
+  } else {
+    err = ERANGE;
   }
 
   return err;
@@ -516,132 +432,96 @@ int
 string_append (string_t *str, const uint8_t *chrs, size_t len)
 {
   int err = 0;
+  size_t tot;
 
-  assert (string_is_sane (str));
-  assert ((chrs != NULL && len != 0) ||
-          (chrs == NULL && len == 0));
+  assert (string_is_sane (str) == 0);
+  assert (chrs != NULL && len != 0 && u8_check (chrs, len) == NULL);
 
-  if (chrs != NULL) {
-    if (len > (SIZE_MAX - str->cnt)) {
-      err = ERANGE;
-    } else {
-      len += str->cnt;
-      err = string_expand (str, len);
-      if (err == 0) {
+  if (len > (SIZE_MAX - str->cnt)) {
+    err = ERANGE;
+  } else {
+    tot = str->cnt + len;
+    if (str->lim == 0 || str->lim >= tot) {
+      if ((err = string_set_size (str, tot)) == 0) {
         (void)memmove (str->buf + str->cnt, chrs, len);
-        str->cnt = len;
-        STRING_TERMINATE (str);
+        str->cnt = tot;
       }
+    } else {
+      err = ERANGE;
     }
   }
 
   return err;
 }
 
-//int
-//string_duplicate (uint8_t **a_chrs, size_t *a_len, string_t *str)
-//{
-//  int err = 0;
-//  uint8_t *chrs = NULL;
-//
-//  assert (string_is_sane (str));
-//  assert (a_chrs != NULL);
-//
-//  if (str->cnt > (SIZE_MAX - 1)) {
-//    err = ENOMEM;
-//  } else if (str->cnt == 0) {
-//    *a_chrs = NULL;
-//    if (a_len != NULL) {
-//      *a_len = 0;
-//    }
-//  } else {
-//    if ((ptr = calloc (str->cnt + 1, sizeof (uint8_t))) == NULL) {
-//      err = errno;
-//    } else {
-//      (void)memcpy (ptr, str->buf, str->cnt);
-//      *a_chrs = chrs;
-//      if (a_len != NULL) {
-//        *a_len = str->cnt;
-//      }
-//    }
-//  }
-//
-//  return err;
-//}
-
-uint8_t *
-string_search_char (string_t *str, ucs4_t chr)
+ssize_t
+string_find_char (string_t *str, ucs4_t chr)
 {
-  assert (string_is_sane (str));
+  ssize_t pos = -1;
+  uint8_t *ptr;
 
-  return u8_chr (str->buf, str->cnt, chr);
+  assert (string_is_sane (str) == 0);
+
+  if ((ptr = u8_chr (str->buf + str->pos, str->cnt - str->pos, chr)) != NULL) {
+    pos = (ssize_t)(((uint8_t *)ptr) - str->buf);
+  }
+
+  return pos;
 }
 
-
-
-
-// string iterator interface
-
-//int
-//string_insert ();
-
 int
-string_get_char (
-  ucs4_t *a_chr,
-  string_t *str)
+string_get_char (ucs4_t *a_chr, string_t *str)
 {
   int err = 0;
   int ret;
-  size_t len;
   ucs4_t chr = '\0';
 
-  assert (string_is_sane (str));
+  assert (string_is_sane (str) == 0);
+  assert (a_chr != NULL);
 
   if (str->pos < str->cnt) {
-    len = str->cnt - str->pos;
-    ret = u8_mbtouc (&chr, (uint8_t *)(str->buf + str->pos), len);
+    ret = u8_mbtouc (
+      &chr, (uint8_t *)(str->buf + str->pos), str->cnt - str->pos);
     if (ret == -1) {
       err = EINVAL;
     }
   }
 
-  if (err = 0) {
+  if (err == 0) {
     *a_chr = chr;
   }
 
   return err;
 }
 
+// FIXME: implement string_has_next_char
+
 int
-string_get_next_char (
-  ucs4_t *a_chr,
-  string_t *str)
+string_get_next_char (ucs4_t *a_chr, string_t *str)
 {
-  unsigned int rep;
   int err = 0;
-  int ret;
-  size_t len;
+  int rep, ret;
+  size_t pos;
   ucs4_t chr = '\0';
 
-  assert (string_is_sane (scan));
+  assert (string_is_sane (str) == 0);
 
-  for (rep = 0; rep < 2 && err == 0; rep++) {
-    assert (str->pos <= str->cnt);
-    len = str->cnt - str->pos;
-    if (len > 0) {
-      ret = u8_mbtouc (&chr, (uint8_t *)(str->buf + str->pos), len);
+  pos = str->pos;
+  for (rep = 2; rep > 0 && err == 0; rep--) {
+    if ((str->cnt - pos) > 0) {
+      ret = u8_mbtouc (&chr, str->buf + pos, str->cnt - str->pos);
       if (ret < 0) {
         err = EINVAL;
-      } else if (ret > 0) {
-        if (rep == 0) {
-          scan->pos += (size_t)ret;
-        }
       } else {
-        rep = 2;
-        chr = '\0';
+        assert (ret != 0);
+        if (rep == 2) {
+          pos += (size_t)ret;
+        } else {
+          /* advance position only if there is a next character */
+          str->pos = pos;
+        }
       }
     } else {
-      rep = 2;
       chr = '\0';
     }
   }
@@ -653,22 +533,22 @@ string_get_next_char (
   return err;
 }
 
+// FIXME: implement string_has_previous_char
+
 int
-string_get_previous_char (
-  ucs4_t *a_chr,
-  string_t *str)
+string_get_previous_char (ucs4_t *a_chr, string_t *str)
 {
   uint8_t *ptr;
-  ucs4_t chr = '\0';
+  ucs4_t chr = 0;
 
-  assert (scanner_is_sane (scan));
+  assert (string_is_sane (str) == 0);
 
-  ptr = (uint8_t *)u8_prev (&chr, scan->str + scan->pos, scan->str);
+  ptr = (uint8_t *)u8_prev (&chr, str->buf + str->pos, str->buf);
   if (ptr == NULL) {
-    chr = '\0';
-    scan->pos = 0;
+    chr = 0;
+    str->pos = 0;
   } else {
-    scan->pos = (size_t)(((uint8_t *)ptr) - str->buf);
+    str->pos = (size_t)(((uint8_t *)ptr) - str->buf);
   }
 
   if (a_chr != NULL) {
@@ -677,43 +557,3 @@ string_get_previous_char (
 
   return 0;
 }
-
-int
-string_get_index (
-  size_t *pos,
-  string_t *str)
-{
-  assert (pos != NULL);
-  assert (string_is_sane (str));
-
-  *pos = str->pos;
-  return 0;
-}
-
-int
-string_set_index (
-  string_t *str,
-  size_t pos)
-{
-  int err = 0;
-  int ret;
-  size_t len;
-  ucs4_t chr;
-
-  assert (string_is_sane (str));
-
-  if (pos >= 0 && pos <= str->cnt) {
-    len = str->cnt - pos;
-    ret = u8_mbtouc (&chr, (uint8_t *)(str->buf + pos), len);
-    if (ret == -1) {
-      err = EINVAL;
-    } else {
-      str->pos = pos;
-    }
-  } else {
-    err = EFBIG;
-  }
-
-  return err;
-}
-

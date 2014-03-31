@@ -46,7 +46,7 @@ value_is_sane (value_t *val)
         break;
       case VALUE_STR:
         if (val->data.str != NULL) {
-          len = strlen (val->data.str);
+          len = strlen ((char *)val->data.str);
           if (u8_check (val->data.str, len) == NULL) {
             err = 0;
           }
@@ -177,7 +177,7 @@ value_get_str (uint8_t **str, value_t *val)
   assert (value_is_sane (val) == 0);
 
   if (val->type == VALUE_STR) {
-    ptr = strdup (val->data.str);
+    ptr = (uint8_t *)strdup ((char *)val->data.str);
     if (ptr != NULL) {
       *str = ptr;
     } else {
@@ -194,21 +194,21 @@ int
 value_set_str (value_t *val, const uint8_t *str, size_t len)
 {
   int err = 0;
-  char *ptr;
+  uint8_t *ptr;
 
   assert (value_is_sane (val) == 0);
   assert (str != NULL);
 
   if (len == 0 || len == SIZE_MAX) {
-    ptr = strdup (str);
+    ptr = (uint8_t *)strdup ((char *)str);
   } else {
-    ptr = strndup (str, len);
+    ptr = (uint8_t *)strndup ((char *)str, len);
   }
 
   if (ptr != NULL) {
     value_clear (val);
     val->type = VALUE_STR;
-    val->data.str = ptr;
+    val->data.str = (uint8_t *)ptr;
   } else {
     err = errno;
   }
