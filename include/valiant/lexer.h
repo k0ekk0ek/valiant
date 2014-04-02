@@ -1,7 +1,9 @@
 #ifndef LEXER_H_INCLUDED
-#define LEXER_H_INCLUDED
+#define LEXER_H_INCLUDED 1
 
-/* lexical analyser heavily inspired by GLib's GScanner interface, modified to
+#include <valiant/value.h>
+
+/* lexical analyzer heavily inspired by GLib's GScanner interface, modified to
    suit my needs. It's not as feature packed as GScanner, but allows for more
    dynamic behaviour where I need it. */
 
@@ -28,85 +30,28 @@ typedef enum {
   TOKEN_COMMENT_MULTI,
   TOKEN_STR_SQUOT,
   TOKEN_STR_DQUOT,
-  TOKEN_IDENT,
   TOKEN_LAST
 } token_t;
 
-// FIXME: octal and hexadecimal tokens aren't even necessary... the user can
-//        still specify if he/she wants to scan for those... but it's not a
-//        seperate token anymore... this is because one can specify hexadecimal
-//        values with doubles to... it would make it confusing!
-//  TOKEN_OCT, /* base-8 integer */
-//  TOKEN_HEX, /* base-16 integer */
-//
+/* Unicode defines a LOT of code points. instead of specifying which characters
+   can be part of an identifier, it's also possible to exclude certain
+   characters from the default set using not_* */
 
-/* IT'S UP TO THE USER TO CONVERT BETWEEN LOCALES! THIS LEXER REQUIRES THE
-   USER TO PASS THE TEXT AS UTF8 */
+/* lexical analyzer scans for boolean and numeric values using POSIX locale. to
+   scan for a boolean or numeric value in a different locale or script, quote
+   the value and offload interpretation. */
 
-// I've come to the conclusion that I simply cannot support different
-// numerical systems in this code. It would involve using the locale and then
-// some to hopefully identify anything usefull
-//
-// And even then we'll run into a lot of problems... roman notation for
-// instance.
-//
-// plus there are a lot of scripts that don't even closely resemble the way in
-// which I'm used to notate numbers
-// a post on the libunistring list mentions the following:
-//
-/*
-Yes, this would be useful. You can implement such a function
-yourself, roughly like this:
-1) Decide what kinds of decimal point character, decimal
-grouping character, exponent marker, sign character,
-and digit scripts you want to support in that conversion.
-2) Verify that all digits in the input are from the same
-script.
-3) Convert the digits to their numerical value using the
-uc_digit_value function.
-4) Build up a 'char *' string with the corresponding ASCII
-digits and sign, and without grouping characters.
-5) Pass that string to strtol or strtod.
+/* CHAR_AS_TOKEN removed as a result of Unicode support */
 
-Such a function will not be in libunistring in the near term,
-because the decisions in 1) are not clear to me yet, how to
-do them right. 
-*/
-//
-// just to indicate some of the problems
-//
-// the only way to support those kinds of numerical systems (if that's even
-// the proper name) is to quote or double quote them. There's simply no other
-// way to have this functionality in a lexer
-//
-// the same situation applies to boolean values... it's just not possible to
-// support true/false in other language e.g. in dutch is would be something
-// like waar/onwaar... it's t much work (and would be subject to opionions
-// etc) to do something like that in this code...
-//
-// in short... just disable the options etc of scanning boolean values and
-// numerical values if you want to use this lexer for locales other than en_US
-// and implement that functionality in the configuration parser you write
-//
-// ... I know ... it isn't fair ... life hardly ever is ... sorry about that
-
-// we can get away with most of the stuff for strings... that's easy...
-// numbers however that's something else:
-// http://icu-project.org/apiref/icu4j/com/ibm/icu/text/DecimalFormat.html
-// http://userguide.icu-project.org/formatparse/number
-// http://savannah.gnu.org/support/?106998
-
-
-/* NOTE: unicode defines a LOT of code points. instead of specifying which
-         characters can be part of an identifier, it's also possible to
-         exclude certain characters from the default set using not_* */
-/* NOTE: user defined boolean values could be a nice feature */
-/* NOTE: CHAR_AS_TOKEN removed as a result of Unicode support */
+/* TOKEN_OCT and TOKEN_HEX tokens removed because they where considered
+   ambiguous. user can still enable/disable support, but they are reported as
+   either TOKEN_INT or TOKEN_FLOAT based on the numerical value as interpreted
+   by the lexical analyzer. */
 
 #define LEXER_STR_SQUOT '\''
 #define LEXER_STR_DQUOT '"'
 
-#define LEXER_CONTEXT_EXPAND()      \
+#define LEXER_CONTEXT_APPLY(X)      \
   X(STR,skip_chars,NULL)            \
   X(STR,ident_first,NULL)           \
   X(STR,not_ident_first,NULL)       \
@@ -130,74 +75,58 @@ do them right.
   X(BOOL,int_as_float,false)        \
   X(BOOL,ident_as_str,false)
 
-/* internal structure of lexer should remain opague */
+/* internal structure of lexer must remain opague */
 typedef struct lexer lexer_t;
 
 int lexer_create (lexer_t **, const uint8_t *, size_t)
   __attribute__ ((nonnull (1,2)));
-int lexer_destroy (lexer_t *)
+void lexer_destroy (lexer_t *)
   __attribute__ ((nonnull));
 
 /* generate context accessor function prototypes */
-#define X_STR(name)                                 \
+#define LEXER_X_STR(name)                           \
 int lexer_get_ ## name (uint8_t **, lexer_t *)      \
-  __attribute__ ((nonnull (1,2)));                  \
+  __attribute__ ((nonnull));                        \
 int lexer_set_ ## name (lexer_t *, const uint8_t *) \
-  __attribute__ ((nonnull (1)));
-#define X_CHAR(name)                                \
+  __attribute__ ((nonnull(1)));
+#define LEXER_X_CHAR(name)                          \
 ucs4_t lexer_get_ ## name (lexer_t *)               \
   __attribute__ ((nonnull));                        \
 void lexer_set_ ## name (lexer_t *, ucs4_t)         \
-  __attribute__ ((nonnull));
-#define X_BOOL(name)                                \
+  __attribute__ ((nonnull(1)));
+#define LEXER_X_BOOL(name)                          \
 bool lexer_get_ ## name (lexer_t *)                 \
   __attribute__ ((nonnull));                        \
 void lexer_set_ ## name (lexer_t *, bool)           \
   __attribute__ ((nonnull (1)));
-#define X(type,name,default) X_ ## type (name)
+#define LEXER_X(type,name,default) LEXER_X_ ## type (name)
 
-LEXER_CONTEXT_EXPAND();
+LEXER_CONTEXT_APPLY(LEXER_X)
 
-#undef X
-#undef X_BOOL
-#undef X_CHAR
-#undef X_STR
+#undef LEXER_X
+#undef LEXER_X_BOOL
+#undef LEXER_X_CHAR
+#undef LEXER_X_STR
 
+int lexer_get_token (token_t *, lexer_t *)
+  __attribute__ ((nonnull));
+int lexer_get_next_token (token_t *, lexer_t *)
+  __attribute__ ((nonnull));
+/* lexer is stateless, except for quotes. ungetting a token does not rewind
+   lexer state, and is useful for e.g. PCRE search and replace support */
+void lexer_unget_token (lexer_t *)
+  __attribute__ ((nonnull));
 
-//int lexer_get_token (token_t *, lexer_t *)
-//  __attribute__((nonnull));
-
-int lexer_shift_token (token_t *, lexer_t *);
-
-int lexer_unshift_token (lexer_t *);
-
-/* dynamically change behaviour of lexical analyzer by setting token,
-   note however that only delimiting tokens can be specified. e.g.
-   TOKEN_STR_SQUOT, TOKEN_LEFT_PAREN, etc. */
-//int lexer_set_token (lexer_t *, token_t *);
-// shouldn't we just implement an unget_token, but instead of ungetc, don't
-// allow the user to specify a token himself?!?! >> it just seems to make more
-// sense... eg. we don't have to worry about keeping state?!?!
-//int lexer_unget_token (lexer_t *); >> not supporting to pass a token generates
-// more work because we'd have to keep more state?!?! >> yes... that's correct
-// but we cannot allow the user to specify a line number etc ... so it wouldn't
-// fit... unget_token without token seems the most logical solution... it does
-// however introduce a lot of work... depending on the token that's ungotten
-//int lexer_shift_
-//int lexer_lapse_token (lexer_t *); // I'm not happy with this name as well
-// it gives the wrong impression
-//
-// using shift instead of get
-// and unshift instead of unget >> get and unget are better... it really
-// doesn't say anything about state?? >> yeah actually it kinda does!
-
-int lexer_get_line (unsigned int **, lexer_t *);
-int lexer_get_column (unsigned int **, lexer_t *);
-int lexer_get_value (value_t **, lexer_t *);
+int lexer_get_line (size_t *, lexer_t *)
+  __attribute__ ((nonnull));
+int lexer_get_column (size_t *, lexer_t *)
+  __attribute__ ((nonnull));
+int lexer_get_value (value_t *, lexer_t *)
+  __attribute__ ((nonnull));
 
 /* lexer.c cleans up after itself */
-#ifndef LEXER_OPTIONS_EXPORT
-#undef LEXER_OPTIONS
+#if !defined LEXER_EXPORT_MACROS
+#undef LEXER_CONTEXT_APPLY
 #endif
 
-#endif
+#endif /* LEXER_H_INCLUDED */

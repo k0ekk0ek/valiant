@@ -31,6 +31,8 @@ void value_destroy (value_t *)
   __attribute__ ((nonnull));
 void value_clear (value_t *)
   __attribute__ ((nonnull));
+int value_copy (value_t *, value_t *)
+  __attribute__ ((nonnull));
 
 value_type_t value_get_type (value_t *)
   __attribute__ ((nonnull));

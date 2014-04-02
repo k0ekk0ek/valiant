@@ -12,17 +12,17 @@
 #include <valiant/value.h>
 
 int
-value_create (value_t **ptr)
+value_create (value_t **a_val)
 {
   int err = 0;
   value_t *val;
 
-  assert (ptr != NULL);
+  assert (a_val != NULL);
 
   if ((val = calloc (1, sizeof (value_t))) == NULL) {
     err = errno;
   } else {
-    *ptr = val;
+    *a_val = val;
   }
 
   return err;
@@ -81,6 +81,29 @@ value_clear (value_t *val)
   }
 
   memset (val, 0, sizeof (value_t));
+}
+
+int
+value_copy (value_t *a_val, value_t *val)
+{
+  int err = 0;
+  uint8_t *str;
+
+  assert (value_is_sane (val) == 0);
+
+  if (val->type == VALUE_STR) {
+    str = (uint8_t *)strdup ((char *)val->data.str);
+    if (str != NULL) {
+      a_val->type = val->type;
+      a_val->data.str = str;
+    } else {
+      err = errno;
+    }
+  } else {
+    (void)memcpy (a_val, val, sizeof (value_t));
+  }
+
+  return err;
 }
 
 value_type_t
