@@ -5,10 +5,11 @@
 
 /* lexical analyzer heavily inspired by GLib's GScanner interface, modified to
    suit my needs. It's not as feature packed as GScanner, but allows for more
-   dynamic behaviour where I need it. */
+   dynamic behavior where I need it. */
 
 typedef enum {
-  TOKEN_EOF = 0,
+  TOKEN_NONE = 0,
+  TOKEN_EOF = TOKEN_NONE, /* TOKEN_EOF is equivalent of TOKEN_NONE */
   TOKEN_LEFT_PAREN = '(',
   TOKEN_RIGHT_PAREN = ')',
   TOKEN_LEFT_CURLY = '{',
@@ -17,8 +18,6 @@ typedef enum {
   TOKEN_RIGHT_BRACE = ']',
   TOKEN_EQUAL_SIGN = '=',
   TOKEN_COMMA = ',',
-  TOKEN_NONE = 256,
-  TOKEN_ERROR,
   TOKEN_BOOL,
   TOKEN_CHAR,
   TOKEN_INT,
@@ -39,14 +38,17 @@ typedef enum {
 
 /* lexical analyzer scans for boolean and numeric values using POSIX locale. to
    scan for a boolean or numeric value in a different locale or script, quote
-   the value and offload interpretation. */
+   the value and offload interpretation */
 
 /* CHAR_AS_TOKEN removed as a result of Unicode support */
 
 /* TOKEN_OCT and TOKEN_HEX tokens removed because they where considered
    ambiguous. user can still enable/disable support, but they are reported as
    either TOKEN_INT or TOKEN_FLOAT based on the numerical value as interpreted
-   by the lexical analyzer. */
+   by the lexical analyzer */
+
+/* TOKEN_ERROR removed because lexical analyzer does not verify input, it
+   simply recognizes sequences opportunistically */
 
 #define LEXER_STR_SQUOT '\''
 #define LEXER_STR_DQUOT '"'
@@ -117,9 +119,9 @@ int lexer_get_next_token (token_t *, lexer_t *)
 void lexer_unget_token (lexer_t *)
   __attribute__ ((nonnull));
 
-int lexer_get_line (size_t *, lexer_t *)
+size_t lexer_get_line (lexer_t *)
   __attribute__ ((nonnull));
-int lexer_get_column (size_t *, lexer_t *)
+size_t lexer_get_column (lexer_t *)
   __attribute__ ((nonnull));
 int lexer_get_value (value_t *, lexer_t *)
   __attribute__ ((nonnull));

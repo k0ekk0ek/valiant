@@ -494,7 +494,7 @@ string_get_char (ucs4_t *a_chr, string_t *str)
   return err;
 }
 
-// FIXME: implement string_has_next_char
+/* FIXME: implement string_has_next_char */
 
 int
 string_get_next_char (ucs4_t *a_chr, string_t *str)
@@ -506,19 +506,15 @@ string_get_next_char (ucs4_t *a_chr, string_t *str)
 
   assert (string_is_sane (str) == 0);
 
-  pos = str->pos;
   for (rep = 2; rep > 0 && err == 0; rep--) {
-    if ((str->cnt - pos) > 0) {
-      ret = u8_mbtouc (&chr, str->buf + pos, str->cnt - str->pos);
+    if ((str->cnt - pos) >= 0) {
+      ret = u8_mbtouc (&chr, str->buf + str->pos, str->cnt - str->pos);
       if (ret < 0) {
         err = EINVAL;
       } else {
         assert (ret != 0);
         if (rep == 2) {
-          pos += (size_t)ret;
-        } else {
-          /* advance position only if there is a next character */
-          str->pos = pos;
+          str->pos += (size_t)ret;
         }
       }
     } else {
@@ -533,7 +529,7 @@ string_get_next_char (ucs4_t *a_chr, string_t *str)
   return err;
 }
 
-// FIXME: implement string_has_previous_char
+/* FIXME: implement string_has_previous_char */
 
 int
 string_get_previous_char (ucs4_t *a_chr, string_t *str)

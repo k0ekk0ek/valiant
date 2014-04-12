@@ -40,16 +40,18 @@ typedef struct {
 
 struct lexer {
   string_t scan; /* scanner */
-  size_t pos; /* scanner state */
   size_t lns; /* line number */
   size_t cols; /* column */
-  int eof; /* end of file */
   ucs4_t dquot; /* double quote character */
   ucs4_t squot; /* single quote character */
   lexer_context_t ctx; /* options */
   lexer_term_t term; /* current token/value in sequence */
 };
 
+#if !defined(NDEBUG)
+static int lexer_is_sane (lexer_t *)
+  __attribute__ ((nonnull));
+#endif
 static int lexer_get_char (ucs4_t *, lexer_t *)
   __attribute__ ((nonnull(2)));
 static int lexer_get_next_char (ucs4_t *, lexer_t *)
@@ -79,6 +81,28 @@ static bool lexer_skip_str_quot (lexer_t *, ucs4_t)
 static int lexer_is_num_first (lexer_t *, ucs4_t)
   __attribute__ ((nonnull(1)));
 
+#if !defined(NDEBUG)
+static int
+lexer_is_sane (lexer_t *lex)
+{
+  int err = EINVAL;
+
+  if (lex != NULL) {
+    err = 0;
+//    assert ((lex->term.tok == TOKEN_STR_SQUOT &&
+//             lex->squot != '\0' && lex->dquot == '\0') ||
+//            (lex->term.tok == TOKEN_STR_DQUOT &&
+//             lex->squot == '\0' && lex->dquot != '\0'));
+    // FIXME: implement
+    // check if scan member is valid >> no thats all done automatically
+    // check if ctx member is sane
+    // check if quote members are sane
+  }
+
+  return err;
+}
+#endif
+
 int
 lexer_create (lexer_t **a_lex, const uint8_t *str, size_t len)
 {
@@ -94,6 +118,9 @@ lexer_create (lexer_t **a_lex, const uint8_t *str, size_t len)
     err = 0;
     string_construct (&lex->scan, str, len);
     *a_lex = lex;
+
+    lex->lns = 1;
+    lex->cols = 1;
 
     /* set defaults */
 #define X(type,name,value) lex->ctx.name = value;
@@ -216,7 +243,7 @@ lexer_get_char (ucs4_t *a_chr, lexer_t *lex)
   assert (a_chr != NULL);
   assert (lex != NULL);
 
-	return string_get_char (a_chr, &lex->scan);
+  return string_get_char (a_chr, &lex->scan);
 }
 
 static int
@@ -229,22 +256,20 @@ lexer_get_next_char (ucs4_t *a_chr, lexer_t *lex)
 
   err = string_get_char (&chr, &lex->scan);
   if (err == 0 && chr != '\0') {
-    err = string_get_next_char (&chr, &lex->scan);
-    if (err == 0) {
-      if (chr == '\n') {
-        lex->lns++;
-        lex->cols = 1;
-      } else {
-        lex->cols++;
-      }
+    if (chr == '\n') {
+      lex->lns++;
+      lex->cols = 1;
+    } else {
+      lex->cols++;
     }
-	}
+    err = string_get_next_char (&chr, &lex->scan);
+  }
 
-  if (err == 0) {
+  if (err == 0 && a_chr != NULL) {
     *a_chr = chr;
   }
 
-	return err;
+  return err;
 }
 
 static int
@@ -258,9 +283,9 @@ lexer_get_previous_char (ucs4_t *a_chr, lexer_t *lex)
   assert (lex != NULL);
 
   rev = string_get_state (&lex->scan);
-  err = string_get_previous_char (a_chr, &lex->scan);
+  err = string_get_previous_char (&chr, &lex->scan);
   if (err == 0) {
-    if (*a_chr == '\n') {
+    if (chr == '\n') {
       assert (lex->lns > 1);
       cols = 1;
 
@@ -280,10 +305,15 @@ lexer_get_previous_char (ucs4_t *a_chr, lexer_t *lex)
       } else {
         string_set_state (&lex->scan, rev);
       }
-    } else if (*a_chr != '\0') {
+    } else if (chr != '\0') {
       assert (lex->cols > 1);
       lex->cols--;
     }
+  }
+
+  if (err == 0 && a_chr != NULL) {
+    (void)string_get_char (&chr, &lex->scan);
+    *a_chr = chr;
   }
 
   return err;
@@ -335,27 +365,26 @@ lexer_unesc_str_dquot (
 {
   int again;
   int err = 0;
-  int esc;
-  int ret;
-  size_t cnt = 0;
-  size_t pos, tot;
+  int esc, ret;
+  size_t cnt, off, pos, tot;
   ucs4_t chr;
   uint8_t *ptr;
 
   assert (a_str != NULL);
   assert (str != NULL);
 
-  cnt = 0;
+  cnt = off = 0;
 
-  for (again = 1, esc = 0, pos = 0; err == 0 && again == 1 && pos < len; ) {
+  for (again = 1, esc = 0, pos = 0; err == 0 && again && pos < len; ) {
     ret = u8_mbtouc (&chr, str+pos, len-pos);
     if (ret < 0 || (size_t)ret > len - pos) {
       err = EINVAL;
     } else {
-      pos += (size_t)ret;
       if (esc == 1) {
         esc = 0;
         cnt += (size_t)ret;
+      } else if (chr == quot && pos == 0) {
+        off = (size_t)ret;
       } else if (chr == '\0' || chr == quot) {
         again = 0;
         cnt += 1;
@@ -364,6 +393,7 @@ lexer_unesc_str_dquot (
       } else {
         cnt += (size_t)ret;
       }
+      pos += (size_t)ret;
     }
   }
 
@@ -372,12 +402,13 @@ lexer_unesc_str_dquot (
     cnt = 0;
     ptr = calloc (tot, sizeof (uint8_t));
     if (ptr != NULL) {
-      for (again = 1, esc = 0, pos = 0; err == 0 && again == 1 && pos < len; ) {
+      for (again = 1, esc = 0, pos = off; err == 0 && again && pos < len; ) {
         ret = u8_mbtouc (&chr, str + pos, len - pos);
         assert (ret > 0 && (size_t)ret <= len - pos);
         pos += (size_t)ret;
 
         if (esc == 1) {
+          esc = 0;
           if (chr == 'a') {
             chr = '\a';
           } else if (chr == 'b') {
@@ -409,13 +440,13 @@ lexer_unesc_str_dquot (
           }
         }
       }
-
-      /* null terminate */
-      ptr[cnt++] = '\0';
-      assert (tot == cnt);
     } else {
       err = errno;
     }
+  }
+
+  if (err == 0) {
+    *a_str = ptr;
   }
 
   return err;
@@ -430,30 +461,29 @@ lexer_unesc_str_squot (
 {
   int again;
   int err = 0;
-  int esc;
-  int ret;
-  size_t cnt = 0;
-  size_t pos, tot;
+  int esc, ret;
+  size_t cnt, off, pos, tot;
   ucs4_t chr;
   uint8_t *ptr;
 
   assert (a_str != NULL);
   assert (str != NULL);
 
-  cnt = 0;
+  cnt = off = 0;
 
-  for (again = 1, esc = 0, pos = 0; err == 0 && again == 1 && pos < len; ) {
+  for (again = 1, esc = 0, pos = 0; err == 0 && again && pos < len; ) {
     ret = u8_mbtouc (&chr, str+pos, len-pos);
     if (ret < 0 || (size_t)ret > len - pos) {
       err = EINVAL;
     } else {
-      pos += (size_t)ret;
       if (esc == 1) {
         esc = 0;
         cnt += (size_t)ret;
         if (chr != quot) {
           cnt += 1;
         }
+      } else if (chr == quot && pos == 0) {
+        off = (size_t)ret;
       } else if (chr == '\0' || chr == quot) {
         again = 0;
         cnt += 1;
@@ -462,6 +492,7 @@ lexer_unesc_str_squot (
       } else {
         cnt += (size_t)ret;
       }
+      pos += (size_t)ret;
     }
   }
 
@@ -470,12 +501,13 @@ lexer_unesc_str_squot (
     cnt = 0;
     ptr = calloc (tot, sizeof (uint8_t));
     if (ptr != NULL) {
-      for (again = 1, esc = 0, pos = 0; err == 0 && again == 1 && pos < len; ) {
+      for (again = 1, esc = 0, pos = off; err == 0 && again && pos < len; ) {
         ret = u8_mbtouc (&chr, str + pos, len - pos);
         assert (ret > 0 && (size_t)ret <= len - pos);
         pos += (size_t)ret;
 
         if (esc == 1) {
+          esc = 0;
           if (chr != quot) {
             ptr[cnt++] = '\\';
           }
@@ -495,13 +527,13 @@ lexer_unesc_str_squot (
           }
         }
       }
-
-      /* null terminate */
-      ptr[cnt++] = '\0';
-      assert (tot == cnt);
     } else {
       err = errno;
     }
+  }
+
+  if (err == 0) {
+    *a_str = ptr;
   }
 
   return err;
@@ -693,245 +725,264 @@ lexer_get_next_token (token_t *a_tok, lexer_t *lex)
 {
   double dbl;
   int err_dbl, err_lng, err = 0;
-  int esc;
+  int base, esc, rep;
   long lng;
-  ssize_t cnt = 1;
-  size_t lim = 0;
-  size_t off = 0;
-  size_t lns, cols;
+  size_t cols, lns;
+  size_t lim, len, off;
   token_t tok = TOKEN_NONE;
-  size_t len;
   ucs4_t chr, *quot;
   uint8_t *end_dbl, *end;
   uint8_t *ptr, *str;
 
   assert (a_tok != NULL);
-  assert (lex != NULL);
+  assert (lexer_is_sane (lex) == 0);
 
   /* operation is stateless, except for opening and closing quotes, but that
      is of no concern to the user */
-  if (lex->term.tok == TOKEN_STR_DQUOT ||
-      lex->term.tok == TOKEN_STR_SQUOT)
-  {
+  if (lex->term.tok == TOKEN_STR_SQUOT || lex->term.tok == TOKEN_STR_DQUOT) {
     assert (value_get_type (&lex->term.val) == VALUE_CHAR);
-    if (lex->dquot != '\0' || lex->squot != '\0') {
+
+    if (lex->scan.pos != lex->term.pos) {
       tok = TOKEN_STR;
     }
   }
 
-  for (cnt = 1; err == 0 && cnt != 0; ) {
-    if (cnt == 1) {
-      err = lexer_get_char (&chr, lex);
+  off = lex->scan.pos;
+  lns = lex->lns;
+  cols = lex->cols;
 
-      if (err == 0) {
-        switch (tok) {
-          case TOKEN_COMMENT_SINGLE:
-            if (chr == '\n') {
-              if (lexer_skip_comment_single (lex)) {
+  for (esc = 0, rep = 2; err == 0 && rep == 2; ) {
+    err = lexer_get_char (&chr, lex);
+
+    if (err == 0 && chr != '\0') {
+      switch (tok) {
+        case TOKEN_COMMENT_SINGLE:
+          if (chr == '\n') {
+            if (lexer_skip_comment_single (lex)) {
+              tok = TOKEN_NONE;
+            } else {
+              rep = 1;
+            }
+          }
+          break;
+        case TOKEN_COMMENT_MULTI:
+          if (chr == '*') {
+            err = lexer_get_next_char (&chr, lex);
+            if (err == 0 && chr == '/') {
+              if (lexer_skip_comment_multi (lex)) {
                 tok = TOKEN_NONE;
               } else {
-                cnt = 0;
+                rep = 1;
               }
             }
-            break;
-          case TOKEN_COMMENT_MULTI:
-            if (chr == '*') {
-              err = lexer_get_char (&chr, lex);
-              if (err == 0 && chr == '/') {
-                if (lexer_skip_comment_multi (lex)) {
-                  tok = TOKEN_NONE;
-                } else {
-                  cnt = 0;
-                }
-              }
-            }
-            break;
-          case TOKEN_IDENT:
-          case TOKEN_IDENT_NULL:
-            if (!lexer_is_ident (lex,chr)) {
-              cnt = -1;
-            }
-            break;
-          case TOKEN_STR:
-            assert (lex->dquot == '\0' || lex->squot == '\0');
+          }
+          break;
+        case TOKEN_IDENT:
+        case TOKEN_IDENT_NULL:
+          if (!lexer_is_ident (lex,chr)) {
+            rep = 0;
+          }
+          break;
+        case TOKEN_STR:
+          assert (lex->dquot == '\0' || lex->squot == '\0');
 
-            if (esc || chr == '\\') {
-              esc = (esc == 0);
-            } else if (lexer_is_str_quot (lex, chr) != NULL) {
+          if (esc || chr == '\\') {
+            esc = (esc == 0);
+          } else if (lexer_is_str_quot (lex, chr) != NULL) {
+            if (lexer_skip_str_quot (lex, chr)) {
+              rep = 1;
+            } else {
+              rep = 0;
+            }
+          }
+          break;
+
+        default: /* TOKEN_NONE */
+          assert (tok == TOKEN_NONE);
+          esc = 0;
+          /* register offset */
+          off = lexer_get_state (lex);
+          lns = lex->lns;
+          cols = lex->cols;
+
+          /* double or single quoted string */
+          if ((quot = lexer_is_str_quot (lex, chr)) != NULL &&
+              (lexer_scan_str_quot (lex, chr)))
+          {
+            if (*quot != '\0') {
               if (lexer_skip_str_quot (lex, chr)) {
-                cnt = 0;
-              } else {
-                cnt = -1;
-              }
-            }
-            break;
-
-          default: /* TOKEN_NONE */
-            assert (tok == TOKEN_NONE);
-            esc = 0;
-            off = lexer_get_state (lex);
-
-            /* double or single quoted string */
-            if ((quot = lexer_is_str_quot (lex, chr)) != NULL) {
-              if (lexer_scan_str_quot (lex, chr)) {
-                if (*quot != '\0') {
-                  if (lexer_skip_str_quot (lex, chr)) {
-                    tok = TOKEN_NONE;
-                    cnt = 2; /* skip current character */
-                  } else {
-                    if (quot == &lex->squot) {
-                      tok = TOKEN_STR_SQUOT;
-                    } else {
-                      tok = TOKEN_STR_DQUOT;
-                    }
-                    cnt = 0;
-                  }
-                  *quot = '\0';
-                } else {
-                  if (lexer_skip_str_quot (lex, chr)) {
-                    tok = TOKEN_STR;
-                    cnt = 2; /* skip current character */
-                  } else {
-                    cnt = 0;
-                  }
-                  *quot = chr;
-                }
-              } else {
                 tok = TOKEN_NONE;
+              } else {
+                if (quot == &lex->squot) {
+                  tok = TOKEN_STR_SQUOT;
+                } else {
+                  assert (quot == &lex->dquot);
+                  tok = TOKEN_STR_DQUOT;
+                }
+                rep = 1;
               }
-
-            /* integer or floating-point number */
-            } else if (lexer_is_num_first (lex, chr)) {
-              /* optional plus or minus sign */
-              if (chr == '+' || chr == '-') {
-                err = lexer_get_next_char (&chr, lex);
+              *quot = '\0';
+            } else {
+              if (lexer_skip_str_quot (lex, chr)) {
+                tok = TOKEN_STR;
+              } else {
+                if (quot == &lex->squot) {
+                  tok = TOKEN_STR_SQUOT;
+                } else {
+                  assert (quot == &lex->dquot);
+                  tok = TOKEN_STR_DQUOT;
+                }
+                rep = 1;
               }
+              *quot = chr;
+            }
 
-              if (!err) {
-                /* scan for octal and hexadecimal values, short circuit if
-                   lexical analyzer should not scan for them */
-                if (chr == '0' && !(err = lexer_get_next_char (&chr, lex))) {
-                  if ((!lexer_scan_hex (lex) && (chr == 'x' || chr == 'X')) ||
-                      (!lexer_scan_oct (lex)))
-                  {
-                    cnt = 0;
+          /* integer or floating-point number */
+          } else if (lexer_is_num_first (lex, chr)) {
+            /* optional plus or minus sign */
+            if (chr == '+' || chr == '-') {
+              err = lexer_get_next_char (&chr, lex);
+            }
+
+            if (!err) {
+              base = 0 /* auto detect */;
+              if (chr == '0' && !(err = lexer_get_next_char (&chr, lex))) {
+                /* scan for hexadecimal value, short circuit if lexical
+                   analyzer should not scan for hexadecimal values */
+                if (!lexer_scan_hex (lex) && (chr == 'x' || chr == 'X')) {
+                  if (lexer_scan_int (lex)) {
                     lng = 0;
                     tok = TOKEN_INT;
-                  }
-                }
-
-                if (!err && tok == TOKEN_NONE) {
-                  str = lex->scan.buf + off;
-
-                  if (lexer_scan_int (lex)) {
-                    err_lng = strtol_c (&lng, str, &end, 0);
-                  }
-                  if (lexer_scan_float (lex)) {
-                    err_dbl = strtod_c (&dbl, str, &end_dbl);
-                  }
-
-                  if (end != end_dbl) {
-                    end = end_dbl;
-                    err = err_dbl;
+                  } else {
+                    assert (lexer_scan_float (lex));
+                    dbl = 0;
                     tok = TOKEN_FLOAT;
-                  } else if (end != str) {
-                    /* in case lexical analyzer must not scan for floating
-                       point numbers or no conversion could be performed. the
-                       latter, however, is not an error. it simply means that
-                       it's not a numeric value */
-                    err = err_lng;
-                    tok = TOKEN_INT;
                   }
-
-                  if (!err) {
-                    assert ((size_t)(end - str) < (SIZE_MAX - off));
-                    lexer_set_state (lex, off + (end - str));
-                  }
+                  rep = 0;
+                /* set base to decimal if lexical analyzer should not scan for
+                   octal values */
+                } else if (!lexer_scan_oct (lex)) {
+                  base = 10;
                 }
               }
 
-            /* comment line */
-            } else if (chr == '#' && lexer_scan_comment_single (lex)) {
-              tok = TOKEN_COMMENT_SINGLE;
+              if (!err && tok == TOKEN_NONE) {
+                str = lex->scan.buf + off;
+                end = end_dbl = str;
 
-            /* comment or comment line */
-            } else if (chr == '/') {
-              err = lexer_get_next_char (&chr, lex);
-              if (err == 0) {
-                /* comment line */
-                if (chr == '/' && lexer_scan_comment_single (lex)) {
-                  tok = TOKEN_COMMENT_SINGLE;
-                  cnt = 2;
-                /* comment */
-                } else if (chr == '*' && lexer_scan_comment_multi (lex)) {
-                  tok = TOKEN_COMMENT_MULTI;
-                  cnt = 2;
+                if (lexer_scan_int (lex)) {
+                  err_lng = strtol_c (&lng, str, &end, base);
+                }
+                if (lexer_scan_float (lex)) {
+                  err_dbl = strtod_c (&dbl, str, &end_dbl);
                 }
 
+                if (end < end_dbl) {
+                  end = end_dbl;
+                  err = err_dbl;
+                  tok = TOKEN_FLOAT;
+                } else if (end != str) {
+                  /* in case lexical analyzer must not scan for floating
+                     point numbers or no conversion could be performed. the
+                     latter, however, is not an error. it simply means that
+                     it's not a numeric value */
+                  err = err_lng;
+                  tok = TOKEN_INT;
+                }
+
+                if (!err) {
+                  assert ((size_t)(end - str) < (SIZE_MAX - off));
+                  len = end - str;
+                  lexer_set_state (lex, off + len);
+                }
+                if (tok != TOKEN_NONE) {
+                  rep = 0;
+                }
+              }
+            }
+
+          /* comment line */
+          } else if (chr == '#' && lexer_scan_comment_single (lex)) {
+            tok = TOKEN_COMMENT_SINGLE;
+
+          /* comment or comment line */
+          } else if (chr == '/') {
+            err = lexer_get_next_char (&chr, lex);
+            if (err == 0) {
+              /* comment line */
+              if (chr == '/' && lexer_scan_comment_single (lex)) {
+                tok = TOKEN_COMMENT_SINGLE;
+              /* comment */
+              } else if (chr == '*' && lexer_scan_comment_multi (lex)) {
+                tok = TOKEN_COMMENT_MULTI;
+              } else {
                 err = lexer_get_previous_char (&chr, lex);
               }
             }
+          }
 
-            /* char */
-            if (err == 0 && cnt == 1 && tok == TOKEN_NONE) {
-              if (lexer_is_ident_first (lex,chr)) {
-                tok = TOKEN_IDENT;
-              } else if (!lexer_is_skip_char (lex,chr)) {
-                tok = TOKEN_CHAR;
-                cnt = 0;
-              }
+          /* char */
+          if (err == 0 && rep != 0 && tok == TOKEN_NONE) {
+            if (lexer_is_ident_first (lex,chr)) {
+              tok = TOKEN_IDENT;
+            } else if (!lexer_is_skip_char (lex,chr)) {
+              tok = TOKEN_CHAR;
+              rep = 1;
             }
+          }
 
-            /* register offset */
-            lns = lex->lns;
-            cols = lex->cols;
-            break;
+          break;
+      }
+
+      if (rep > 0) {
+        (void)lexer_get_next_char (NULL, lex);
+        if (rep < 2) {
+          rep = 0;
         }
       }
-    } else if (cnt > 1) {
-      cnt--;
-      err = lexer_get_next_char (NULL, lex);
-    } else if (cnt < 1) {
-      cnt++;
-      err = lexer_get_previous_char (NULL, lex);
+    } else {
+      rep = 0;
     }
   }
 
   if (!err) {
     lim = lexer_get_state (lex);
-    str = lex->scan.buf;
+    str = lex->scan.buf + off;
     len = lim - off;
 
     switch (tok) {
       case TOKEN_IDENT:
-        if ((len == 5 && strncasecmp_c (str+off, (uint8_t *)"false", 5) == 0) ||
-            (len == 2 && strncasecmp_c (str+off, (uint8_t *)"no",    2) == 0) ||
-            (len == 3 && strncasecmp_c (str+off, (uint8_t *)"off",   3) == 0))
+        if ((len == 5 && strncasecmp_c (str, "false", 5) == 0)
+         || (len == 2 && strncasecmp_c (str, "no",    2) == 0)
+         || (len == 3 && strncasecmp_c (str, "off",   3) == 0))
         {
-          lex->term.tok = TOKEN_BOOL;
+          tok = TOKEN_BOOL;
           value_set_bool (&lex->term.val, false);
-        } else if ((len == 4 && strncasecmp_c (str+off, (uint8_t *)"true", 4) == 0) ||
-                   (len == 3 && strncasecmp_c (str+off, (uint8_t *)"yes",  3) == 0) ||
-                   (len == 2 && strncasecmp_c (str+off, (uint8_t *)"on",   2) == 0))
+        } else if ((len == 4 && strncasecmp_c (str, "true", 4) == 0)
+                || (len == 3 && strncasecmp_c (str, "yes",  3) == 0)
+                || (len == 2 && strncasecmp_c (str, "on",   2) == 0))
         {
-          lex->term.tok = TOKEN_BOOL;
+          tok = TOKEN_BOOL;
           value_set_bool (&lex->term.val, true);
-        } else {
-          err = value_set_str (&lex->term.val, str, len);
-          if (err == 0) {
-            if (lexer_ident_as_str (lex)) {
-              lex->term.tok = TOKEN_STR;
-            } else {
-              lex->term.tok = TOKEN_IDENT;
-            }
+        } else if (len == 4 && strncasecmp_c (str, "null", 4) == 0) {
+          if (lexer_ident_as_str (lex)) {
+            tok = TOKEN_STR;
+            err = value_set_str (&lex->term.val, str, len);
+          } else {
+            tok = TOKEN_IDENT_NULL;
+            value_clear (&lex->term.val);
           }
+        } else {
+          if (lexer_ident_as_str (lex)) {
+            tok = TOKEN_STR;
+          }
+          err = value_set_str (&lex->term.val, str, len);
         }
         break;
-      case TOKEN_CHAR:
-        value_set_char (&lex->term.val, chr);
-        break;
       case TOKEN_STR:
+        ptr = NULL;
         if (lex->squot != '\0') {
+          assert (lex->dquot == '\0');
           err = lexer_unesc_str_squot (&ptr, str, len, lex->squot);
         } else {
           assert (lex->dquot != '\0');
@@ -940,7 +991,7 @@ lexer_get_next_token (token_t *a_tok, lexer_t *lex)
 
         if (err == 0) {
           assert (ptr != NULL);
-          err = value_set_str (&lex->term.val, str, 0);
+          err = value_set_str (&lex->term.val, ptr, 0);
           free (ptr);
           ptr = NULL;
         }
@@ -956,7 +1007,33 @@ lexer_get_next_token (token_t *a_tok, lexer_t *lex)
       case TOKEN_FLOAT:
         value_set_double (&lex->term.val, dbl);
         break;
+      case TOKEN_CHAR:
+        if (chr == '(') {
+          tok = TOKEN_LEFT_PAREN;
+        } else if (chr == ')') {
+          tok = TOKEN_RIGHT_PAREN;
+        } else if (chr == '{') {
+          tok = TOKEN_LEFT_CURLY;
+        } else if (chr == '}') {
+          tok = TOKEN_RIGHT_CURLY;
+        } else if (chr == '[') {
+          tok = TOKEN_LEFT_BRACE;
+        } else if (chr == ']') {
+          tok = TOKEN_RIGHT_BRACE;
+        } else if (chr == '=') {
+          tok = TOKEN_EQUAL_SIGN;
+        } else if (chr == ',') {
+          tok = TOKEN_COMMA;
+        }
+        /* fall through */
+      case TOKEN_STR_SQUOT:
+      case TOKEN_STR_DQUOT:
+        value_set_char (&lex->term.val, chr);
+        break;
+      case TOKEN_NONE: /* same as TOKEN_EOF */
       default:
+        assert (chr == '\0');
+        value_clear (&lex->term.val);
         break;
     }
 
@@ -979,29 +1056,25 @@ lexer_unget_token (lexer_t *lex)
 {
   assert (lex && lex->term.tok != TOKEN_NONE);
   /* reset position, not state */
-  lex->pos = lex->term.pos;
+  lexer_set_state (lex, lex->term.pos);
   lex->lns = lex->term.lns;
   lex->cols = lex->term.cols;
 }
 
-int
-lexer_get_line (size_t *lns, lexer_t *lex)
+size_t
+lexer_get_line (lexer_t *lex)
 {
-  assert (lns != NULL);
   assert (lexer_is_sane (lex) == 0);
 
-  *lns = lex->term.lns;
-  return 0;
+  return lex->term.lns;
 }
 
-int
-lexer_get_column (size_t *cols, lexer_t *lex)
+size_t
+lexer_get_column (lexer_t *lex)
 {
-  assert (cols != NULL);
   assert (lexer_is_sane (lex) == 0);
 
-  *cols = lex->term.cols;
-  return 0;
+  return lex->term.cols;
 }
 
 int

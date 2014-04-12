@@ -384,11 +384,11 @@ string_test_string_iterator (void)
   }
 
   CU_ASSERT (res == 0);
-  CU_ASSERT (string_get_state (&str) == len - 1);
+  CU_ASSERT (string_get_state (&str) == len);
 
-  for (pos = 0;
+  for (pos = 0, (void)string_get_previous_char (NULL, &str);
        pos < len && res == 0;
-       pos++, string_get_previous_char (NULL, &str))
+       pos++, (void)string_get_previous_char (NULL, &str))
   {
     if (string_get_char (&chr, &str) != 0 || foobar[(len - 1) - pos] != chr) {
       res = 1;
